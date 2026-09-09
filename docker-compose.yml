@@ -1,0 +1,36 @@
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: gdg_platform
+      MYSQL_USER: gdg_local
+      MYSQL_PASSWORD: gdg_local_password
+      MYSQL_ROOT_PASSWORD: gdg_root_local_password
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  backend:
+    build:
+      context: .
+    command: sh -c "pnpm prisma generate && pnpm start:dev"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 3001
+      FRONTEND_URL: http://localhost:3000
+      DATABASE_URL: mysql://gdg_local:gdg_local_password@db:3306/gdg_platform
+    ports:
+      - "3001:3001"
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+volumes:
+  mysql_data:
