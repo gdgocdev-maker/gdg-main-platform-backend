@@ -112,3 +112,56 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+
+## Team Setup: Docker and Environment
+
+Use Docker for local backend development. It starts the NestJS API and a MySQL database that exists only on your computer. No shared, staging, or production database credentials are needed.
+
+### Before you start
+
+1. Install and open [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+2. Wait for Docker Desktop to show that it is running.
+3. Clone this backend repository and open a terminal in its root folder.
+
+### Start the local environment
+
+Run this command:
+
+```bash
+docker compose up --build
+```
+
+The first run may take several minutes because Docker downloads the required images and installs project dependencies. Keep this terminal open while developing.
+
+When startup is complete, the backend is available at [http://localhost:3001](http://localhost:3001). The current root route responds with `Hello World!`.
+
+### Environment variables
+
+For the Docker workflow, you do **not** need to create a `.env` file. Docker Compose safely supplies the local values below to the backend:
+
+- `PORT=3001`
+- `FRONTEND_URL=http://localhost:3000`
+- a local-only MySQL `DATABASE_URL`
+
+The template in [`.env.example`](.env.example) is for running the backend outside Docker. If you create a `.env` file for that purpose, never commit it and never add real/shared credentials to it.
+
+### Everyday commands
+
+```bash
+# Start again after the first build
+docker compose up
+
+# Run in the background
+docker compose up -d
+
+# Follow backend logs
+docker compose logs -f backend
+
+# Stop containers while keeping your local MySQL data
+docker compose down
+
+# Intentionally remove containers and local MySQL data
+docker compose down -v
+```
+
+Source changes are watched automatically while Docker is running. If port `3001` is already in use, stop the other local service using that port before starting this environment.

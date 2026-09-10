@@ -15,6 +15,8 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "lint": "oxlint src/ test/",
+    "typecheck": "tsc --noEmit",
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
@@ -38,6 +40,9 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "devDependencies": {
     "@nestjs/cli": "^12.0.0",
     "@nestjs/mau": "^0.2.6",
@@ -49,6 +54,7 @@
     "@types/passport-google-oauth20": "^2.0.17",
     "@types/supertest": "^7.0.0",
     "@vitest/coverage-v8": "^4.1.2",
+    "dotenv": "^16.6.1",
     "eslint": "^10.10.0",
     "oxlint": "^1.58.0",
     "prettier": "^3.4.2",
