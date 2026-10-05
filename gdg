@@ -1,0 +1,133 @@
+#!/bin/sh
+set -eu
+
+gdg_source=$0
+while [ -L "$gdg_source" ]; do
+  gdg_directory=$(CDPATH= cd -- "$(dirname -- "$gdg_source")" && pwd)
+  gdg_source=$(readlink "$gdg_source")
+  case "$gdg_source" in
+    /*) ;;
+    *) gdg_source="$gdg_directory/$gdg_source" ;;
+  esac
+done
+GDG_ROOT=$(CDPATH= cd -- "$(dirname -- "$gdg_source")" && pwd)
+cd "$GDG_ROOT"
+
+compose() {
+  docker compose -f docker-compose.yml -f compose.platform.yml "$@"
+}
+
+setup_env() {
+  if [ -f .env ]; then
+    return
+  fi
+  umask 077
+  db_password=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')
+  admin_password=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')
+  (set -C; sed \
+    -e "s/^POSTGRES_PASSWORD=CHANGE_ME$/POSTGRES_PASSWORD=$db_password/" \
+    -e "s/:CHANGE_ME@/:$db_password@/" \
+    -e "s/^PGADMIN_DEFAULT_PASSWORD=CHANGE_ME$/PGADMIN_DEFAULT_PASSWORD=$admin_password/" \
+    .env.example > .env)
+  printf '%s\n' 'Created private .env with local credentials. Existing database credentials are never reset.'
+}
+
+scope=all
+case "${1:-help}" in
+  frontend|backend)
+    scope=$1
+    shift
+    ;;
+esac
+action=${1:-help}
+if [ "$#" -gt 0 ]; then
+  shift
+fi
+
+case "$scope" in
+  frontend) services=frontend ;;
+  backend) services='db pgadmin backend' ;;
+  all) services='db pgadmin backend frontend' ;;
+esac
+
+case "$action" in
+  install)
+    bin_dir=${GDG_BIN_DIR:-$HOME/.local/bin}
+    shell_rc=${GDG_SHELL_RC:-}
+    if [ -z "$shell_rc" ]; then
+      shell_name=${SHELL:-}
+      case "${shell_name##*/}" in
+        zsh) shell_rc="$HOME/.zshrc" ;;
+        bash)
+          if [ "$(uname -s)" = Darwin ]; then
+            shell_rc="$HOME/.bash_profile"
+          else
+            shell_rc="$HOME/.bashrc"
+          fi
+          ;;
+        *) printf '%s\n' 'Automatic installation supports zsh/bash. Use ./gdg directly for other shells.' >&2; exit 1 ;;
+      esac
+    fi
+    mkdir -p "$bin_dir"
+    if [ -e "$bin_dir/gdg" ] || [ -L "$bin_dir/gdg" ]; then
+      if [ ! -L "$bin_dir/gdg" ] || [ "$(readlink "$bin_dir/gdg")" != "$GDG_ROOT/gdg" ]; then
+        printf '%s\n' 'A different gdg command already exists in the installation directory; preserved it.' >&2
+        exit 1
+      fi
+    else
+      ln -s "$GDG_ROOT/gdg" "$bin_dir/gdg"
+    fi
+    quoted_bin=$(printf '%s' "$bin_dir" | sed "s/'/'\\\\''/g")
+    path_line="export PATH='$quoted_bin':\"\$PATH\""
+    if [ ! -f "$shell_rc" ] || ! grep -qxF "$path_line" "$shell_rc"; then
+      printf '\n%s\n%s\n' '# GDG local platform command' "$path_line" >> "$shell_rc"
+    fi
+    printf '%s\n' 'Installed gdg. Open a new terminal to use gdg run, gdg stop, and scoped commands.'
+    ;;
+  run)
+    if [ "$scope" != backend ]; then
+      frontend_path=${FRONTEND_PATH:-../gdg-main-platform-frontend}
+      if [ ! -f "$frontend_path/package.json" ] || [ ! -f "$frontend_path/pnpm-lock.yaml" ]; then
+        printf '%s\n' 'Clone gdg-main-platform-frontend beside the backend, or export FRONTEND_PATH to its directory.' >&2
+        exit 1
+      fi
+    fi
+    setup_env
+    compose config --quiet
+    # These fixed service names are deliberately split into separate arguments.
+    # Refresh dependency/cache volumes; named database/settings volumes stay intact.
+    if [ "$scope" = frontend ]; then
+      compose up -d --build --renew-anon-volumes --wait --wait-timeout 300 --no-deps frontend
+    else
+      compose up -d --build --renew-anon-volumes --wait --wait-timeout 300 $services
+    fi
+    if [ "$scope" != backend ]; then
+      printf '%s\n' 'Frontend: http://localhost:3000'
+    fi
+    if [ "$scope" != frontend ]; then
+      printf '%s\n' 'Backend: http://localhost:3001' 'pgAdmin: http://localhost:5050 (default; see PGADMIN_PORT in .env)'
+    fi
+    ;;
+  stop) compose stop $services ;;
+  status) compose ps $services ;;
+  logs)
+    if [ "$#" -gt 0 ]; then
+      compose logs -f "$@"
+    else
+      compose logs -f $services
+    fi
+    ;;
+  test)
+    if [ "$scope" != frontend ]; then
+      compose exec -T backend pnpm check
+      compose exec -T backend pnpm test:e2e
+    fi
+    if [ "$scope" != backend ]; then
+      compose exec -T frontend pnpm check
+    fi
+    ;;
+  help|--help|-h)
+    printf '%s\n' './gdg install  Install the gdg command for new zsh/bash terminals.' './gdg [frontend|backend] run     Build/start the selected local services.' './gdg [frontend|backend] stop    Stop selected services and retain data.' './gdg [frontend|backend] status  Show service status.' './gdg [frontend|backend] logs [service]  Follow logs.' './gdg [frontend|backend] test    Run checks inside running containers.' 'Omit frontend/backend to operate on the full platform.'
+    ;;
+  *) printf '%s\n' 'Unknown command. Use ./gdg help.' >&2; exit 1 ;;
+esac
