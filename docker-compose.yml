@@ -41,7 +41,7 @@ services:
   backend:
     build:
       context: .
-    command: sh -c "pnpm prisma generate && pnpm start:dev"
+    command: pnpm start:dev
     depends_on:
       db:
         condition: service_healthy

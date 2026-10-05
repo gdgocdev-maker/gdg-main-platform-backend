@@ -44,9 +44,33 @@ Start with the local database only:
 
 PostgreSQL is available on `127.0.0.1:5432` by default. Open pgAdmin at `http://localhost:5050` and log in using `PGADMIN_DEFAULT_EMAIL` and `PGADMIN_DEFAULT_PASSWORD` from `.env`. The `GDG Local PostgreSQL` server is preloaded; expand it and enter `POSTGRES_PASSWORD` to connect. Inside Docker it uses `db:5432`. If port 5432 is occupied, change `POSTGRES_PORT` and the port in `DATABASE_URL` together.
 
-`docker compose stop db pgadmin` stops both services and keeps their data. Database models/migrations and the NestJS Prisma connection service are subsequent steps. The existing backend container starts with `docker compose up --build backend`; application startup alone does not prove database connectivity.
+`docker compose stop db pgadmin` stops both services and keeps their data. Database models/migrations are subsequent steps. NestJS now imports `PrismaModule` and connects using `PrismaService`. The existing backend container starts with `docker compose up --build backend`; startup now executes `SELECT 1` through Prisma and fails if PostgreSQL is unavailable.
 
 See [local Docker setup](DOCKER_SETUP_GUIDE_DRAFT.md) for details.
+
+## Prisma connection and checks
+
+`PrismaModule` exports `PrismaService`. Import the module into each feature module that needs database access, then inject `PrismaService` into its service. It reads `DATABASE_URL`, uses the PostgreSQL adapter, verifies connectivity on initialization, and disconnects on shutdown. `main.ts` enables NestJS shutdown hooks.
+
+For host development:
+
+If the backend Docker container is running, stop it first with `docker compose stop backend` to free port `3001`. Keep the database running.
+
+```bash
+pnpm install --frozen-lockfile
+docker compose up -d db --wait
+pnpm start:dev
+```
+
+Build/start/typecheck/test scripts generate the Prisma client automatically using `prisma7.config.ts`. Generated files stay ignored. After changing the schema, `pnpm prisma:generate` regenerates the client without applying migrations.
+
+```bash
+pnpm check
+pnpm test:e2e
+pnpm build
+```
+
+E2E tests require the local PostgreSQL database and `.env`. They verify the root response, a real SQL query, startup rejection for an unreachable database, and connection cleanup on application close. They do not create tables or modify project data.
 
 ## Product scope at a glance
 

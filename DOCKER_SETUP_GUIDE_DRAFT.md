@@ -63,7 +63,7 @@ docker compose up -d db pgadmin --wait
 docker compose up --build backend
 ```
 
-The backend starter returns `Hello World!`; this does not prove a database connection. PrismaModule/PrismaService integration is a separate next step.
+The backend starter returns `Hello World!`. During startup, `PrismaService` executes `SELECT 1` to verify database connectivity; an unavailable database prevents startup. The backend disconnects on shutdown. Build/start scripts generate the Prisma client automatically. Domain tables and migrations remain a separate next step.
 
 PostgreSQL uses its own volume. Existing MySQL data is not transferred or deleted. Do not run volume-deletion commands to perform routine setup.
 

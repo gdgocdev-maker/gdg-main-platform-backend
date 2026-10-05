@@ -33,6 +33,16 @@ postgresql://USER:PASSWORD@HOST:PORT/DATABASE_NAME?schema=public
 
 Real connection values are secrets. They must stay in ignored local/deployment environment configuration, never in source code, documentation examples, logs, or commits.
 
+## NestJS integration
+
+`src/prisma/prisma.module.ts` exports `PrismaService` for importing feature modules. The service extends the generated Prisma client and uses `@prisma/adapter-pg` at the same version as Prisma. Connection credentials are read through NestJS `ConfigService`.
+
+Startup performs a read-only `SELECT 1` because creating the adapter/pool alone does not establish a verified database connection. Connection attempts have a five-second timeout. `onModuleDestroy` disconnects Prisma, and the application enables shutdown hooks for process signals.
+
+The generated ESM client uses `.js` import extensions to match the repository's NodeNext configuration. Generate it with `pnpm prisma:generate`; build/start/typecheck/test commands also generate it automatically. No models or migrations are added by this connection setup.
+
+See the [Prisma 7 upgrade guide](https://docs.prisma.io/docs/guides/upgrade-prisma-orm/v7) for the adapter and connection-timeout behavior.
+
 ## TBD
 
 Database naming conventions, schema layout, seed policy, migration-review process, backup/restore, retention, data classification, production access, and database hosting configuration are **TBD**.
