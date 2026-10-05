@@ -37,14 +37,14 @@ NestJS starter code, Docker configuration, and an empty Prisma schema are presen
 Start with the local database only:
 
 1. Install and start Docker Desktop.
-2. Copy `.env.example` to `.env`. Replace `CHANGE_ME` in both password fields with the same private, URL-safe password. Never commit `.env`.
+2. Copy `.env.example` to `.env`. Replace `CHANGE_ME` in `POSTGRES_PASSWORD` and `DATABASE_URL` with the same private, URL-safe password. Choose a separate private `PGADMIN_DEFAULT_PASSWORD`. Never commit `.env`.
 3. Run `docker compose config --quiet` to validate the configuration without printing credentials.
-4. Run `docker compose up -d db --wait`.
+4. Run `docker compose up -d db pgadmin --wait`.
 5. Run `docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT current_database();"'` to verify the database.
 
-PostgreSQL is available on `127.0.0.1:5432` by default. pgAdmin can connect using `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` from your local `.env`. If port 5432 is occupied, change `POSTGRES_PORT` and the port in `DATABASE_URL` together.
+PostgreSQL is available on `127.0.0.1:5432` by default. Open pgAdmin at `http://localhost:5050` and log in using `PGADMIN_DEFAULT_EMAIL` and `PGADMIN_DEFAULT_PASSWORD` from `.env`. The `GDG Local PostgreSQL` server is preloaded; expand it and enter `POSTGRES_PASSWORD` to connect. Inside Docker it uses `db:5432`. If port 5432 is occupied, change `POSTGRES_PORT` and the port in `DATABASE_URL` together.
 
-`docker compose stop db` stops the database and keeps its data. Database models/migrations, pgAdmin setup, and the NestJS Prisma connection service are subsequent steps. The existing backend container starts with `docker compose up --build backend`; application startup alone does not prove database connectivity.
+`docker compose stop db pgadmin` stops both services and keeps their data. Database models/migrations and the NestJS Prisma connection service are subsequent steps. The existing backend container starts with `docker compose up --build backend`; application startup alone does not prove database connectivity.
 
 See [local Docker setup](DOCKER_SETUP_GUIDE_DRAFT.md) for details.
 
