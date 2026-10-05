@@ -24,7 +24,7 @@ Do not silently choose one source when sources conflict. First identify the conf
 | Frontend and backend are separate repositories | Approved |
 | Next.js is frontend only | Approved |
 | NestJS is the authoritative backend | Approved |
-| Persistence uses MySQL and Prisma | Approved |
+| Local development/testing uses PostgreSQL and Prisma | Approved by user on 2026-10-05; supersedes the local MySQL baseline |
 | Authentication uses NestJS Auth, JWT, Google OAuth, and backend-enforced RBAC | Approved direction |
 | Swagger/OpenAPI is the authoritative frontend-backend contract | Approved |
 
@@ -35,3 +35,13 @@ Each new decision should record: date, owner/approver, status, context, decision
 ## Legacy-source clarification
 
 Web Doc Final describes some Next.js full-stack capabilities, including Server Actions. For this platform's backend responsibilities, that guidance is superseded by the approved separate-repository architecture: Next.js is frontend only and NestJS is authoritative.
+
+## 2026-10-05 Local PostgreSQL development
+
+- Owner/approver: project user in the current Codex chat.
+- Status: approved for local development and testing.
+- Context: backend developers need a shared schema on private local databases before the Database committee provides the official PostgreSQL database.
+- Decision: use local PostgreSQL, pgAdmin for inspection, and committed Prisma schema/migrations for reproducible setup. Keep credentials in ignored `.env` files.
+- Affected repository: backend; frontend continues to consume the NestJS API.
+- Source: user's local-database instructions and authorization to begin setup in this chat; no external source URL supplied.
+- Migration/rollback: the current Prisma schema contains no models or migrations. Use a separate PostgreSQL Docker volume; do not delete or transfer any existing MySQL data. Official database migration/transfer remains a later coordinated task.

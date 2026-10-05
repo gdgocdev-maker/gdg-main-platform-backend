@@ -2,7 +2,7 @@
 
 ## Approved direction
 
-Use MySQL as the relational database and Prisma as the ORM/migration layer. The technical guide identifies a MySQL connection string through `DATABASE_URL` and uses `npx prisma generate` plus `npx prisma migrate dev` as its initial development workflow.
+Use PostgreSQL for local development and tests, with Prisma as the ORM/migration layer, following the user decision recorded in `decision-governance.md`. The official database connection and schema/data transfer will be coordinated when it is ready.
 
 ## Source of truth
 
@@ -25,10 +25,10 @@ The product proposal’s entity list is conceptual. It mentions users/members, a
 
 ## Environment configuration
 
-The technical guide gives the `DATABASE_URL` shape:
+The local PostgreSQL `DATABASE_URL` shape is:
 
 ```text
-mysql://USER:PASSWORD@HOST:PORT/DATABASE_NAME
+postgresql://USER:PASSWORD@HOST:PORT/DATABASE_NAME?schema=public
 ```
 
 Real connection values are secrets. They must stay in ignored local/deployment environment configuration, never in source code, documentation examples, logs, or commits.

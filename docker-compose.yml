@@ -1,19 +1,20 @@
 services:
   db:
-    image: mysql:8.4
+    image: postgres:17
     environment:
-      MYSQL_DATABASE: gdg_platform
-      MYSQL_USER: gdg_local
-      MYSQL_PASSWORD: gdg_local_password
-      MYSQL_ROOT_PASSWORD: gdg_root_local_password
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 5s
       retries: 20
       start_period: 10s
     volumes:
-      - mysql_data:/var/lib/mysql
+      - postgres_data:/var/lib/postgresql/data
 
   backend:
     build:
@@ -25,7 +26,7 @@ services:
     environment:
       PORT: 3001
       FRONTEND_URL: http://localhost:3000
-      DATABASE_URL: mysql://gdg_local:gdg_local_password@db:3306/gdg_platform
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public
     ports:
       - "3001:3001"
     volumes:
@@ -33,4 +34,4 @@ services:
       - /app/node_modules
 
 volumes:
-  mysql_data:
+  postgres_data:

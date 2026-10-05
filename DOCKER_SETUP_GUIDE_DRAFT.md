@@ -2,76 +2,56 @@
 
 **Status:** Draft for team-lead review. Do not publish to Notion until approved.
 
-## Purpose
-
-This guide lets each backend developer run the GDG Main Platform backend and a private MySQL database on their own computer. It does not use a shared, staging, or production database.
+This setup provides a private PostgreSQL 17 database for development and tests. It does not create domain tables, seed data, or a connection to the official database.
 
 ## Prerequisites
 
-- Git
-- VS Code or another code editor
-- Docker Desktop
+Install Docker Desktop and wait until Docker is running. Node.js and pnpm are needed only when running backend/Prisma commands directly on the host.
 
-Open Docker Desktop and wait until it shows that Docker is running before continuing.
+## Start the database
 
-> Node.js and pnpm are useful for running project commands directly on your computer. They are not required for the Docker workflow below because the Docker image installs and runs the backend dependencies.
-
-## Start the local environment
-
-Clone the backend repository, open a terminal in the repository root, and run:
+1. Copy `.env.example` to `.env`.
+2. Replace `CHANGE_ME` in `POSTGRES_PASSWORD` and `DATABASE_URL` with the same private password. Use letters/numbers or URL-encode the password in the URL.
+3. Validate and start:
 
 ```bash
-docker compose up --build
+docker compose config --quiet
+docker compose up -d db --wait
+docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT current_database();"'
 ```
 
-The first run can take several minutes. Docker will build the NestJS backend image, start MySQL, wait for MySQL to become healthy, and then start the backend in watch mode.
+Compose creates `POSTGRES_DB` and a PostgreSQL user on the first initialization of the `postgres_data` volume. Changing environment values later does not update credentials or rename an existing database.
 
-When the logs show `Nest application successfully started`, open:
+## Connection settings
 
-```text
-http://localhost:3001
-```
+For pgAdmin installed on your computer:
 
-The current root route returns `Hello World!`, which confirms that the backend is reachable.
+- Host: `127.0.0.1`
+- Port: `POSTGRES_PORT` from `.env` (default `5432`)
+- Database: `POSTGRES_DB` from `.env`
+- Username: `POSTGRES_USER` from `.env`
+- Password: `POSTGRES_PASSWORD` from `.env`
 
-## Local environment variables
+Host Prisma commands use `DATABASE_URL`. Compose supplies the backend container with an internal URL using `db:5432`. If port 5432 is occupied, change `POSTGRES_PORT` and the port in the host `DATABASE_URL` together.
 
-Docker Compose automatically provides the backend with:
-
-- `PORT=3001`
-- `FRONTEND_URL=http://localhost:3000`
-- a local-only MySQL `DATABASE_URL`
-
-Developers using Docker do **not** need to create a `.env` file or manually enter database credentials. The database runs only in their local Docker environment.
-
-The repository's `.env.example` is only for developers who intentionally run the backend outside Docker. Never commit a `.env` file or real/shared credentials.
+Never commit `.env` or credentials. The tracked `.env.example` contains placeholders only. Avoid printing resolved Compose configuration because it includes passwords.
 
 ## Everyday commands
 
 ```bash
-# Start after the first build
-docker compose up
+# Check database status
+docker compose ps db
 
-# Start in the background
-docker compose up -d
+# Stop and keep data
+docker compose stop db
 
-# View backend logs
-docker compose logs -f backend
+# Start again
+docker compose up -d db --wait
 
-# View MySQL logs
-docker compose logs -f db
-
-# Stop containers and keep local database data
-docker compose down
-
-# Intentionally stop containers and delete local database data
-docker compose down -v
+# Start the existing backend container when ready
+docker compose up --build backend
 ```
 
-## Important notes
+The backend starter returns `Hello World!`; this does not prove a database connection. PrismaModule/PrismaService integration is a separate next step.
 
-- Source-code changes are watched automatically while Docker is running.
-- Do not run `pnpm start:dev` at the same time as Docker Compose; both use port `3001`.
-- If port `3001` is already used by another application, stop that application before running Docker Compose.
-- `docker compose down` keeps the local MySQL database. Only `docker compose down -v` deletes it.
-- This setup does not create seed users, test accounts, or remote database connections.
+PostgreSQL uses its own volume. Existing MySQL data is not transferred or deleted. Do not run volume-deletion commands to perform routine setup.
