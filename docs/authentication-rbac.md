@@ -2,7 +2,9 @@
 
 ## Approved direction
 
-The technical guide specifies NestJS authentication, JWT/token-based authentication, Google OAuth, and role-based access control (RBAC). The backend is the authoritative enforcement point.
+The user confirmed Supabase Auth as the credential owner on 2026-10-05. NestJS verifies the provider identity and enforces local role-based and committee-based access control. The backend is the authoritative enforcement point. Google OAuth remains a potential provider flow requiring configuration review.
+
+Do not store password hashes in the local users table. The proposed schema links local accounts to Supabase identities through a unique auth_user_id UUID. Pre-existing local records may remain unlinked until invitation/setup completes. Invitation, reset, token verification, and idempotent provider-to-local provisioning must be designed with the authentication owner.
 
 The proposal identifies these user roles: Member, Volunteer, Organizer, Employee/Staff, Admin, and later proposes Alumni. It gives examples of capabilities for Member, Volunteer, Organizer, and Admin.
 
@@ -35,6 +37,6 @@ The following must be confirmed before coding the full auth system:
 - account provisioning, deactivation, alumni transition, and role-change workflow;
 - Google OAuth restrictions, consent-screen settings, callback routes, and allowed email domains;
 - token transport/storage, expiry, refresh, logout, revocation, and session policy;
-- password or non-Google sign-in policy, if any;
+- Supabase password/invitation/reset flows and which OAuth providers are enabled;
 - audit-log, account-recovery, privacy, and retention requirements.
 - CORS allowlist, OAuth redirect allowlist, CSRF policy if cookies are used, and Swagger/OpenAPI access policy.
