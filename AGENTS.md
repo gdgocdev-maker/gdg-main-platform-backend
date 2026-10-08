@@ -2,7 +2,7 @@
 
 ## Purpose and authority
 
-This repository owns the authoritative backend for the GDG Main Platform: NestJS APIs, authentication and authorization enforcement, domain logic, persistence through Prisma/MySQL, and integrations approved for the backend.
+This repository owns the authoritative backend for the GDG Main Platform: NestJS APIs, authentication and authorization enforcement, domain logic, persistence through Prisma/PostgreSQL, and integrations approved for the backend.
 
 NestJS is the authoritative backend framework. The separate Next.js repository is frontend only; do not move backend authority into it or create a parallel backend.
 
@@ -19,7 +19,7 @@ Do not silently choose one source when two sources conflict. Identify the confli
 
 ## Architecture guardrails
 
-- Use NestJS with TypeScript for server code and Prisma with MySQL for persistence.
+- Use NestJS with TypeScript for server code and Prisma with PostgreSQL for persistence.
 - Enforce authentication, authorization, validation, and business rules on the server. Client-side checks never replace them.
 - Treat Prisma schema and committed migrations as the source of truth for implemented database structure.
 - Publish and maintain Swagger/OpenAPI as the authoritative API contract. Update it in the same change as every endpoint or DTO change; do not make incompatible changes without coordinated frontend impact review and a documented migration decision.

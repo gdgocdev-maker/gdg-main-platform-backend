@@ -9,7 +9,7 @@ RUN pnpm install --frozen-lockfile
 
 COPY prisma ./prisma
 COPY prisma7.config.ts ./
-RUN pnpm prisma generate
+RUN pnpm prisma:generate
 
 COPY . .
 

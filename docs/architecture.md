@@ -5,7 +5,7 @@
 This repository is the authoritative backend for the GDG Main Platform.
 
 ```
-Next.js frontend -> NestJS API -> Prisma -> MySQL
+Next.js frontend -> NestJS API -> Prisma -> PostgreSQL
 ```
 
 The NestJS API owns server-side authentication, RBAC enforcement, input validation, domain logic, persistence, and approved external-service integration. The separate frontend renders the user experience and consumes documented API endpoints.
@@ -16,7 +16,7 @@ The NestJS API owns server-side authentication, RBAC enforcement, input validati
 | --- | --- |
 | Runtime | Node.js LTS (20+ in the technical guide) |
 | Backend | NestJS with TypeScript |
-| Database | MySQL |
+| Database | PostgreSQL |
 | ORM | Prisma |
 | Authentication direction | NestJS authentication, JWT/token-based auth, Google OAuth |
 | Authorization | RBAC |
