@@ -135,3 +135,11 @@ Observed: the empty database fails the suite before migration; both fresh replay
 These tests prove row integrity, uniqueness under competing writes, replay and recovery; service workflow, QR security, authorization and API traffic remain deferred to their implementations.
 
 Fresh read-only Phase 2 review found no safety/correctness blocker. Its missing question-position and token-hash uniqueness coverage was added; the runner now also checks all thirteen domain tables for leftover fixtures.
+
+## Phase 3 startup integration
+
+The Compose backend command runs `pnpm prisma:migrate:deploy && exec pnpm start:dev`. An assertion against the merged Compose configuration failed before the change and passed after it. `gdg run` and `gdg backend run` share this command; frontend-only selection is unchanged. `SETUP.md` explains automatic migration, thirteen project tables, refresh, update/restart and safe handling of previously manual schemas. README adds the host migration step and isolated test commands.
+
+`pnpm test:startup:local` reuses the isolated schema runner and additionally builds a temporary backend image, starts it on a private disposable network, checks real HTTP readiness after fresh migration, inserts a synthetic record and verifies its preservation after restart, then verifies a separate incompatible nonempty schema prevents NestJS from starting. No project volumes or .env files are mounted by these tests.
+
+Phase 3 observed results: startup-command assertion, launcher checks, merged Compose validation, `pnpm check`, `pnpm build`, and `pnpm test:startup:local` all passed. The last command also reran both 71-case schema replays, rollback/recovery and 75 combined e2e cases. Disposable backend/database containers, network and tagged image were removed. Host `.env` and application databases were untouched.

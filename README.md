@@ -100,6 +100,8 @@ Frontend-only mode uses `--no-deps` and does not start the backend/database. API
 
 For a different frontend location, export `FRONTEND_PATH` before running `./gdg run`; the default sibling path needs no configuration. Backend-only developers can continue using `docker compose up -d --build backend` without the frontend clone.
 
+Backend Docker startup applies committed migrations with `pnpm prisma:migrate:deploy` before NestJS starts. Migration failure prevents startup; inspect `gdg logs backend`. Re-running applies pending files and preserves data. Do not edit applied migrations or reset/baseline existing tables to hide a mismatch.
+
 ## Prisma connection and checks
 
 `PrismaModule` exports `PrismaService`. Import the module into each feature module that needs database access, then inject `PrismaService` into its service. It reads `DATABASE_URL`, uses the PostgreSQL adapter, verifies connectivity on initialization, and disconnects on shutdown. `main.ts` enables NestJS shutdown hooks.
@@ -111,6 +113,7 @@ If the backend Docker container is running, stop it first with `docker compose s
 ```bash
 pnpm install --frozen-lockfile
 docker compose up -d db --wait
+pnpm prisma:migrate:deploy
 pnpm start:dev
 ```
 
@@ -123,6 +126,15 @@ pnpm build
 ```
 
 E2E tests require the local PostgreSQL database and `.env`. They verify the root response, a real SQL query, startup rejection for an unreachable database, and connection cleanup on application close. They do not create tables or modify project data.
+
+For isolated migration checks (host Node.js/pnpm and Docker required):
+
+```bash
+pnpm test:schema:local
+pnpm test:startup:local
+```
+
+These create and remove their own disposable PostgreSQL server. The startup check also builds a temporary backend image and verifies fresh migration, HTTP readiness, preserved data after restart, and refusal to start on a nonempty incompatible schema. Normal e2e skips schema cases unless `TEST_DATABASE_URL` is explicitly supplied; `test:schema` requires a separate local `gdg_schema_test_*` database.
 
 ## Product scope at a glance
 

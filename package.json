@@ -25,7 +25,8 @@
     "prisma:generate": "prisma generate --config prisma7.config.ts",
     "prisma:migrate:deploy": "prisma migrate deploy --config prisma7.config.ts",
     "test:schema": "pnpm prisma:generate && vitest run --config vitest.config.schema.ts",
-    "test:schema:local": "node test/run-schema-tests.mjs"
+    "test:schema:local": "node test/run-schema-tests.mjs",
+    "test:startup:local": "node test/startup-command.test.mjs && node test/run-schema-tests.mjs --startup"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

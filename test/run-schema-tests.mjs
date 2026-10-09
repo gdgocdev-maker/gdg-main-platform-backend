@@ -24,6 +24,11 @@ const env = {
 };
 const scratch = mkdtempSync(join(tmpdir(), 'gdg-schema-test-'));
 let started = false;
+let backendStarted = false;
+let networkStarted = false;
+let imageBuilt = false;
+const backendName = `${name}-backend`;
+const image = `${name}:startup`;
 function run(command, args, overrides = {}) {
   // pnpm 12 may be a shebang-less shim on macOS; a shell handles its ENOEXEC fallback.
   if (command === 'pnpm') {
@@ -65,8 +70,12 @@ function sql(database, query) {
   ]).trim();
 }
 try {
+  run('docker', ['network', 'create', name]);
+  networkStarted = true;
   run('docker', [
     'run',
+    '--network',
+    name,
     '--detach',
     '--rm',
     '--name',
@@ -294,9 +303,155 @@ try {
     'PASS: explicit failed-history resolution permits a successful retry.',
   );
   console.log(run('pnpm', ['test:e2e'], testEnv));
+  if (process.argv.includes('--startup')) {
+    const config = JSON.parse(
+      run('docker', [
+        'compose',
+        '-f',
+        'docker-compose.yml',
+        '-f',
+        'compose.platform.yml',
+        'config',
+        '--no-interpolate',
+        '--format',
+        'json',
+      ]),
+    );
+    const command = config.services.backend.command;
+    assert.deepEqual(command, [
+      'sh',
+      '-c',
+      'pnpm prisma:migrate:deploy && exec pnpm start:dev',
+    ]);
+    console.log('Building isolated backend image for startup verification.');
+    run('docker', ['build', '-t', image, '.']);
+    imageBuilt = true;
+    const startupDb = 'gdg_schema_test_startup';
+    run('docker', ['exec', name, 'createdb', '-U', 'postgres', startupDb]);
+    const startBackend = () => {
+      run(
+        'docker',
+        [
+          'run',
+          '--detach',
+          '--network',
+          name,
+          '--name',
+          backendName,
+          '-e',
+          'DATABASE_URL',
+          '-e',
+          'PORT=3001',
+          '-p',
+          '127.0.0.1::3001',
+          image,
+          ...command,
+        ],
+        {
+          DATABASE_URL: url(startupDb).replace(
+            `127.0.0.1:${port}`,
+            `${name}:5432`,
+          ),
+        },
+      );
+      backendStarted = true;
+      return run('docker', ['port', backendName, '3001/tcp'])
+        .trim()
+        .split(':')
+        .at(-1);
+    };
+    const stopBackend = () => {
+      run('docker', ['rm', '--force', backendName]);
+      backendStarted = false;
+    };
+    const waitForHttp = async (backendPort) => {
+      for (let attempt = 0; attempt < 120; attempt++) {
+        try {
+          const response = await fetch(`http://127.0.0.1:${backendPort}`, {
+            signal: AbortSignal.timeout(1000),
+          });
+          if (response.ok && (await response.text()) === 'Hello World!') return;
+        } catch {
+          /* Server may still be migrating or compiling. */
+        }
+        await delay(500);
+      }
+      throw new Error('Isolated backend did not become HTTP ready');
+    };
+    await waitForHttp(startBackend());
+    assert.equal(
+      sql(
+        startupDb,
+        "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename <> '_prisma_migrations'",
+      ),
+      '13',
+    );
+    sql(
+      startupDb,
+      "INSERT INTO users(full_name,email,updated_at) VALUES ('Preserved fixture','preserved@example.test',CURRENT_TIMESTAMP)",
+    );
+    stopBackend();
+    await waitForHttp(startBackend());
+    assert.equal(
+      sql(
+        startupDb,
+        "SELECT count(*) FROM users WHERE email='preserved@example.test'",
+      ),
+      '1',
+    );
+    stopBackend();
+    // A separate incompatible database must fail before the application command runs.
+    sql('postgres', 'CREATE DATABASE gdg_schema_test_incompatible');
+    sql(
+      'gdg_schema_test_incompatible',
+      'CREATE TABLE incompatible_fixture(id integer)',
+    );
+    run(
+      'docker',
+      [
+        'run',
+        '--detach',
+        '--network',
+        name,
+        '--name',
+        backendName,
+        '-e',
+        'DATABASE_URL',
+        '-e',
+        'PORT=3001',
+        image,
+        ...command,
+      ],
+      {
+        DATABASE_URL: url('gdg_schema_test_incompatible').replace(
+          `127.0.0.1:${port}`,
+          `${name}:5432`,
+        ),
+      },
+    );
+    backendStarted = true;
+    const exit = run('docker', ['wait', backendName]).trim();
+    assert.notEqual(exit, '0');
+    const failedLogs = spawnSync('docker', ['logs', backendName], {
+      encoding: 'utf8',
+    });
+    assert.equal(failedLogs.status, 0);
+    assert.match(`${failedLogs.stdout}${failedLogs.stderr}`, /P3005|not empty/);
+    assert.doesNotMatch(
+      `${failedLogs.stdout}${failedLogs.stderr}`,
+      /nest start|Nest application successfully started/,
+    );
+    stopBackend();
+    console.log(
+      'PASS: Docker startup migrates before HTTP readiness, preserves data on restart, and fails closed on incompatible schema.',
+    );
+  }
 } finally {
   try {
+    if (backendStarted) run('docker', ['rm', '--force', backendName]);
     if (started) run('docker', ['rm', '--force', name]);
+    if (networkStarted) run('docker', ['network', 'rm', name]);
+    if (imageBuilt) run('docker', ['image', 'rm', '--force', image]);
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
