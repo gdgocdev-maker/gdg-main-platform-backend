@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider            = "prisma-client"
   output              = "../src/generated/prisma"
@@ -12,4 +7,294 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+enum RegistrationStatus {
+  PENDING
+  WAITLISTED
+  AWAITING_CONFIRMATION
+  CONFIRMED
+  DECLINED
+  CANCELLED
+  LATE_CANCELLATION
+  NOT_SELECTED
+  REJECTED
+  EXPIRED
+  NO_CHECK_IN
+  EXCUSED
+}
+
+enum EventStatus {
+  DRAFT     @map("draft")
+  PUBLISHED @map("published")
+  COMPLETED @map("completed")
+  CANCELLED @map("cancelled")
+}
+
+enum QuestionType {
+  TEXT     @map("text")
+  SELECT   @map("select")
+  RADIO    @map("radio")
+  CHECKBOX @map("checkbox")
+}
+
+enum MemberType {
+  CURRENT @map("current")
+  ALUMNI  @map("alumni")
+}
+
+enum CommitteeRole {
+  LEADER      @map("Leader")
+  CO_LEADER   @map("Co-Leader")
+  COORDINATOR @map("Coordinator")
+  MEMBER      @map("Member")
+}
+
+enum BlacklistReason {
+  CONFIRMATION_EXPIRED
+  LATE_CANCELLATION
+  NO_CHECK_IN
+}
+
+model User {
+  userId      Int       @id @default(autoincrement()) @map("user_id")
+  memberId    Int?      @unique @map("member_id")
+  authUserId  String?   @unique @map("auth_user_id") @db.Uuid
+  fullName    String    @map("full_name") @db.VarChar(150)
+  email       String    @unique @db.VarChar(255)
+  phoneNumber String?   @map("phone_number") @db.VarChar(20)
+  isActive    Boolean   @default(true) @map("is_active")
+  isVerified  Boolean   @default(false) @map("is_verified")
+  lastLogin   DateTime? @map("last_login") @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  member                   Member?                      @relation(fields: [memberId], references: [memberId], onDelete: Restrict, onUpdate: Restrict)
+  roles                    UserRole[]
+  createdEvents            Event[]                      @relation("EventCreator")
+  registrations            EventRegistration[]          @relation("RegistrationOwner")
+  reviewedRegistrations    EventRegistration[]          @relation("RegistrationReviewer")
+  checkedInRegistrations   EventRegistration[]          @relation("RegistrationCheckInStaff")
+  excusedRegistrations     EventRegistration[]          @relation("RegistrationExcuseStaff")
+  resolvedBlacklistEntries RegistrationBlacklistEntry[] @relation("BlacklistResolver")
+
+  @@map("users")
+}
+
+model Role {
+  roleId      Int     @id @default(autoincrement()) @map("role_id")
+  roleName    String  @unique @map("role_name") @db.VarChar(50)
+  description String? @db.Text
+
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  roleId     Int      @map("role_id")
+  assignedAt DateTime @default(now()) @map("assigned_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [userId], onDelete: Cascade, onUpdate: Restrict)
+  role Role @relation(fields: [roleId], references: [roleId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model Permission {
+  permissionId   Int     @id @default(autoincrement()) @map("permission_id")
+  permissionName String  @unique @map("permission_name") @db.VarChar(100)
+  description    String? @db.Text
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           Int @id @default(autoincrement())
+  roleId       Int @map("role_id")
+  permissionId Int @map("permission_id")
+
+  role       Role       @relation(fields: [roleId], references: [roleId], onDelete: Cascade, onUpdate: Restrict)
+  permission Permission @relation(fields: [permissionId], references: [permissionId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model Member {
+  memberId        Int        @id @default(autoincrement()) @map("member_id")
+  fullName        String     @map("full_name") @db.VarChar(150)
+  phoneNumber     String?    @map("phone_number") @db.VarChar(20)
+  emailPersonal   String?    @map("email_personal") @db.VarChar(255)
+  emailUniversity String?    @unique @map("email_university") @db.VarChar(255)
+  university      String?    @db.VarChar(150)
+  branch          String?    @db.VarChar(20)
+  major           String?    @db.VarChar(100)
+  profileImageUrl String?    @map("profile_image_url") @db.VarChar(255)
+  bio             String?    @db.Text
+  memberType      MemberType @default(CURRENT) @map("member_type")
+  joinDate        DateTime?  @map("join_date") @db.Date
+  isActive        Boolean    @default(true) @map("is_active")
+
+  user       User?
+  committees MemberCommittee[]
+
+  @@map("member")
+}
+
+model Committee {
+  committeeId       Int    @id @default(autoincrement()) @map("committee_id")
+  committeeName     String @unique @map("committee_name") @db.VarChar(100)
+  committeeCode     String @unique @map("committee_code") @db.VarChar(50)
+  parentCommitteeId Int?   @map("parent_committee_id")
+
+  parent   Committee?        @relation("CommitteeHierarchy", fields: [parentCommitteeId], references: [committeeId], onDelete: Restrict, onUpdate: Restrict)
+  children Committee[]       @relation("CommitteeHierarchy")
+  members  MemberCommittee[]
+  events   Event[]
+
+  @@index([parentCommitteeId])
+  @@map("committee")
+}
+
+model MemberCommittee {
+  id          Int           @id @default(autoincrement())
+  memberId    Int           @map("member_id")
+  committeeId Int           @map("committee_id")
+  role        CommitteeRole
+
+  member    Member    @relation(fields: [memberId], references: [memberId], onDelete: Cascade, onUpdate: Restrict)
+  committee Committee @relation(fields: [committeeId], references: [committeeId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([memberId, committeeId])
+  @@index([committeeId, role])
+  @@map("member_committee")
+}
+
+model Event {
+  eventId                 Int         @id @default(autoincrement()) @map("event_id")
+  name                    String      @db.VarChar(200)
+  description             String?     @db.Text
+  startsAt                DateTime    @map("starts_at") @db.Timestamptz(3)
+  endsAt                  DateTime    @map("ends_at") @db.Timestamptz(3)
+  location                String?     @db.VarChar(255)
+  capacity                Int
+  registrationDeadline    DateTime    @map("registration_deadline") @db.Timestamptz(3)
+  confirmationWindowHours Int         @default(24) @map("confirmation_window_hours")
+  imageUrl                String?     @map("image_url") @db.VarChar(255)
+  requirements            String?     @db.Text
+  status                  EventStatus @default(DRAFT)
+  createdBy               Int         @map("created_by")
+  committeeId             Int         @map("committee_id")
+  createdAt               DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  creator       User                @relation("EventCreator", fields: [createdBy], references: [userId], onDelete: Restrict, onUpdate: Restrict)
+  committee     Committee           @relation(fields: [committeeId], references: [committeeId], onDelete: Restrict, onUpdate: Restrict)
+  questions     EventQuestion[]
+  registrations EventRegistration[]
+
+  @@index([status, startsAt, eventId])
+  @@index([status, endsAt, eventId])
+  @@index([createdBy, createdAt, eventId])
+  @@index([committeeId, createdAt, eventId])
+  @@map("events")
+}
+
+model EventQuestion {
+  questionId   Int          @id @default(autoincrement()) @map("question_id")
+  eventId      Int          @map("event_id")
+  questionText String       @map("question_text") @db.Text
+  questionType QuestionType @map("question_type")
+  isRequired   Boolean      @default(false) @map("is_required")
+  position     Int
+  options      Json?        @db.JsonB
+
+  event   Event                @relation(fields: [eventId], references: [eventId], onDelete: Cascade, onUpdate: Restrict)
+  answers RegistrationAnswer[]
+
+  @@unique([eventId, position])
+  @@unique([questionId, eventId])
+  @@map("event_questions")
+}
+
+model EventRegistration {
+  registrationId           Int                @id @default(autoincrement()) @map("registration_id")
+  eventId                  Int                @map("event_id")
+  userId                   Int                @map("user_id")
+  registeredAt             DateTime           @default(now()) @map("registered_at") @db.Timestamptz(3)
+  status                   RegistrationStatus @default(PENDING)
+  reviewedBy               Int?               @map("reviewed_by")
+  approvedAt               DateTime?          @map("approved_at") @db.Timestamptz(3)
+  confirmationDeadline     DateTime?          @map("confirmation_deadline") @db.Timestamptz(3)
+  confirmedAt              DateTime?          @map("confirmed_at") @db.Timestamptz(3)
+  waitlistPosition         Int?               @map("waitlist_position")
+  cancelledAt              DateTime?          @map("cancelled_at") @db.Timestamptz(3)
+  excusedAt                DateTime?          @map("excused_at") @db.Timestamptz(3)
+  excusedBy                Int?               @map("excused_by")
+  excuseReason             String?            @map("excuse_reason") @db.Text
+  attendanceTokenHash      String?            @unique @map("attendance_token_hash") @db.Text
+  attendanceTokenEncrypted String?            @map("attendance_token_encrypted") @db.Text
+  checkedInAt              DateTime?          @map("checked_in_at") @db.Timestamptz(3)
+  checkedInBy              Int?               @map("checked_in_by")
+
+  event            Event                        @relation(fields: [eventId], references: [eventId], onDelete: Restrict, onUpdate: Restrict)
+  user             User                         @relation("RegistrationOwner", fields: [userId], references: [userId], onDelete: Restrict, onUpdate: Restrict)
+  reviewer         User?                        @relation("RegistrationReviewer", fields: [reviewedBy], references: [userId], onDelete: Restrict, onUpdate: Restrict)
+  checkInStaff     User?                        @relation("RegistrationCheckInStaff", fields: [checkedInBy], references: [userId], onDelete: Restrict, onUpdate: Restrict)
+  excuseStaff      User?                        @relation("RegistrationExcuseStaff", fields: [excusedBy], references: [userId], onDelete: Restrict, onUpdate: Restrict)
+  answers          RegistrationAnswer[]
+  blacklistEntries RegistrationBlacklistEntry[]
+
+  @@unique([eventId, userId])
+  @@unique([registrationId, eventId])
+  @@unique([eventId, waitlistPosition])
+  @@index([userId, registeredAt, registrationId])
+  @@index([eventId, status, registeredAt, registrationId])
+  @@index([status, confirmationDeadline])
+  @@index([reviewedBy])
+  @@index([checkedInBy])
+  @@index([excusedBy])
+  @@map("event_registrations")
+}
+
+model RegistrationAnswer {
+  answerId       Int    @id @default(autoincrement()) @map("answer_id")
+  registrationId Int    @map("registration_id")
+  questionId     Int    @map("question_id")
+  eventId        Int    @map("event_id")
+  answerText     String @map("answer_text") @db.Text
+
+  // Both foreign keys share eventId to prevent answers to another event's questions.
+  registration EventRegistration @relation(fields: [registrationId, eventId], references: [registrationId, eventId], onDelete: Cascade, onUpdate: Restrict)
+  question     EventQuestion     @relation(fields: [questionId, eventId], references: [questionId, eventId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([registrationId, questionId])
+  @@index([questionId, eventId])
+  @@map("registration_answers")
+}
+
+model RegistrationBlacklistEntry {
+  entryId          Int             @id @default(autoincrement()) @map("entry_id")
+  registrationId   Int             @map("registration_id")
+  reason           BlacklistReason
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  resolvedAt       DateTime?       @map("resolved_at") @db.Timestamptz(3)
+  resolvedBy       Int?            @map("resolved_by")
+  resolutionReason String?         @map("resolution_reason") @db.Text
+
+  registration EventRegistration @relation(fields: [registrationId], references: [registrationId], onDelete: Restrict, onUpdate: Restrict)
+  resolver     User?             @relation("BlacklistResolver", fields: [resolvedBy], references: [userId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([registrationId, reason])
+  @@index([resolvedBy])
+  @@map("registration_blacklist_entries")
 }
