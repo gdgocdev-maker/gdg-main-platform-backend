@@ -4,6 +4,10 @@
 
 This document prevents product, technical, and task sources from being silently mixed or overridden. It applies to all backend changes.
 
+## Terminology
+
+GDG on Campus UJ is a **group**, not a club. Use “group” in documentation and participant-facing copy, as clarified by the user on 2026-10-07. Membership means group membership.
+
 ## Source Authority by Domain
 
 - **Approved decisions** define the current accepted direction only when they explicitly supersede an older decision or document. Record material architecture and product decisions here.
@@ -65,3 +69,47 @@ Web Doc Final describes some Next.js full-stack capabilities, including Server A
 - QR decision: acceptance precedes confirmation; issue the registration-specific secure QR only after user confirmation, show the same QR in the platform and confirmation email, and permit a single backend-validated check-in by authorized staff.
 - Schema impact: plan token identity and check-in metadata tied to registrations, including non-member registrations; no event-to-PR assignment table. No personal data in the QR.
 - Migration/rollback: no schema or migration has been applied; exact token storage and check-in lifecycle constraints remain proposed in the design review.
+
+## 2026-10-07 Registration lifecycle approval
+
+- Owner/approver: project user in this chat; explicit approval: “ok done, take the approve”.
+- Status: approved behavior; implementation pending.
+- Decision: use the original eleven categorized registration statuses (superseded by the 2026-10-09 update below) documented in the core database design. DECLINED includes voluntary waitlist withdrawal; remaining waitlisted users become NOT_SELECTED at event start, without a warning or later promotion.
+- Confirmation: authorized admin sets the event window (default 24 hours); existing approval deadlines remain unchanged when it is edited.
+- Cancellation: at least two hours before start uses CANCELLED; cancellation within the final two hours uses LATE_CANCELLATION. EXPIRED and LATE_CANCELLATION create incident warnings visible to PR, without blocking registration.
+- Excuse: PR may set EXCUSED and resolve the corresponding incident warning while preserving history; other unresolved warnings remain visible.
+- Source: subsequent user clarifications/approval in this chat supersede the original registration-state allocation. Full transition rules and remaining event-time edge cases are recorded in the core design document.
+- Migration/rollback: documentation only; no migration, seed, or database operation performed. Warning storage expands the original 12-table core and remains a proposed schema detail.
+
+## 2026-10-07 Full registration and attendance decision approval
+
+- Owner/approver: project user; explicit “approved” annotation on the full decision summary.
+- Status: approved business behavior; implementation pending.
+- Decision: new confirmation deadlines are capped at event start; admin window edits affect future approvals only. The initial PENDING/WAITLISTED cleanup proposal is superseded by the 2026-10-09 transition contract below.
+- Check-in: opens one hour before start and closes at event end. CONFIRMED with no recorded check-in at end creates a NO_CHECK_IN blacklist incident; actual attendance remains separate from registration status.
+- Questions: questions/options cannot be changed or deleted after the first registration.
+- Blacklist: EXPIRED, LATE_CANCELLATION and NO_CHECK_IN create informational incidents, never registration blocks. PR may excuse an incident, preserving history and unrelated incidents. Participant wording is Attendance notice; Blacklist is internal/database terminology.
+- Scope: all other approved authentication, group membership, PR scope, capacity, QR, cancellation, waitlist remain in force; the status set is superseded by the 2026-10-09 update below. See the core database design's Full business decision approval section.
+- Source/precedence: the user's approved full summary supersedes older open questions about these workflows; it does not approve unspecified physical-schema or cryptographic choices.
+- Migration/rollback: documentation only; no code, schema, database migration, commit, push or deployment performed by this approval-recording task.
+
+## 2026-10-09 Twelve-status schema planning update
+
+- Owner/approver: project user; latest approved status and Reject Remaining clarifications in this chat.
+- Status: approved workflow; schema/migration implementation pending.
+- Status set: PENDING, WAITLISTED, AWAITING_CONFIRMATION, CONFIRMED, DECLINED, CANCELLED, LATE_CANCELLATION, NOT_SELECTED, REJECTED, EXPIRED, NO_CHECK_IN, EXCUSED. Default PENDING.
+- EXPIRED: PR accepted but the user missed confirmation; create a blacklist incident.
+- NO_CHECK_IN: confirmed user with no recorded scan at event end transitions from CONFIRMED to NO_CHECK_IN; create a blacklist incident and preserve confirmation history. This supersedes leaving the registration CONFIRMED after missing check-in.
+- Selection: explicit Reject Remaining changes only PENDING to REJECTED. At event start, remaining WAITLISTED become NOT_SELECTED without a warning. This supersedes automatic PENDING-to-NOT_SELECTED cleanup; no new rule is inferred for forgotten PENDING applications.
+- Attendance: successful check-in keeps CONFIRMED and sets checked_in_at/checked_in_by. PR may excuse an incident without deleting history or releasing a seat twice.
+- Affected repository: backend design and decision documentation; no API or database migration applied.
+- Source: user's approvals and request to update the plan with twelve statuses. Exact transitions are in the core design's Current transition contract section.
+
+
+## 2026-10-09 Physical schema implementation proposal
+
+- Status: proposed for review, not a new approved business decision or applied schema.
+- Context: translate the approved twelve-status workflow into reproducible migrations.
+- Proposal: thirteen tables including registration-linked blacklist history; required starts_at/ends_at instants support multi-day camps; canonical unique login email; JSONB choice options and JSON-encoded checkbox answers. Exact columns, constraints and mapping are in the core database design.
+- Execution checklist: [Database Schema Migrations Implementation Plan](superpowers/plans/2026-10-09-database-schema-migrations.md). Permission seeds and feature endpoints remain separate.
+- Migration/rollback: planning only. Future verification uses dedicated disposable databases, preserving the active developer database and Docker volumes.

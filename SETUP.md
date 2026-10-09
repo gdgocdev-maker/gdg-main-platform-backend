@@ -61,7 +61,7 @@ gdg backend run
 
 Wait until the services show `Healthy`. The first run may take several minutes to download images and dependencies.
 
-This starts the backend, database, and pgAdmin. Open [the backend](http://localhost:3001). `Hello World!` means the app started successfully. Startup also checks the database connection.
+This starts the backend, database, and pgAdmin. Open [the backend](http://localhost:3001). `Hello World!` means the app started successfully. Startup applies the committed migrations before starting NestJS and checks the database connection. If migration fails, the backend does not start; inspect `gdg logs backend`.
 
 ## 5. Open pgAdmin and connect
 
@@ -73,7 +73,17 @@ This starts the backend, database, and pgAdmin. Open [the backend](http://localh
 
 The browser version already includes the server connection. If you use the desktop pgAdmin app, register a server with host `127.0.0.1`, port `5432`, database `gdg_platform`, username `gdg_local`, and the value of `POSTGRES_PASSWORD` as the password.
 
-Tables have not been added yet. Once migrations are available, everyone will apply the same files from the repository. Do not create or change the table structure manually in pgAdmin.
+You should see thirteen project tables, plus Prisma’s `_prisma_migrations` history table. Refresh **Tables** if needed. Everyone gets the same structure from the committed migrations. Do not create or change tables manually in pgAdmin.
+
+After pulling backend updates in your backend clone, run `gdg backend run` again to apply any new migrations. Startup does not reset your database. Teammates use `migrate deploy` through startup; only schema authors create new migrations. If your database already contains manually created project tables, stop and ask the schema owner before proceeding; do not reset or baseline it yourself.
+
+To verify the migration, run this from the backend folder:
+
+```bash
+docker compose exec -T backend pnpm exec prisma migrate status --config prisma7.config.ts
+```
+
+Prisma should report that the database schema is up to date. Fresh tables are empty; setup does not create accounts or sample events. For errors or schema changes, see [Database and Prisma](docs/database-prisma.md).
 
 ## Daily commands
 

@@ -6,7 +6,7 @@ This repository is separate from the frontend. It owns the NestJS API, server-si
 
 ## Status
 
-NestJS starter code, Docker configuration, and an empty Prisma schema are present. Local development/testing now uses PostgreSQL. Domain tables, migrations, seed data, and API contracts are not implemented yet.
+NestJS, Prisma/PostgreSQL, Docker startup, thirteen domain tables and the initial migration are implemented. Startup applies committed migrations before NestJS starts. Domain APIs, Supabase Auth integration and production deployment procedures are not implemented yet.
 
 ## Approved technical direction
 
@@ -15,12 +15,12 @@ NestJS starter code, Docker configuration, and an empty Prisma schema are presen
 | Backend framework | NestJS on Node.js with TypeScript |
 | Database | PostgreSQL |
 | ORM and migrations | Prisma |
-| Authentication direction | NestJS authentication, JWT/token-based auth, Google OAuth |
+| Authentication direction | Supabase Auth owns credentials; NestJS validates authentication and enforces permissions |
 | Authorization | RBAC, enforced by backend |
 | API contract | Swagger/OpenAPI, published and maintained by backend |
 | Validation tooling named in guide | `class-validator` and `class-transformer` |
 | Local backend address in the technical guide | `http://localhost:3001` |
-| Node.js | LTS, version 20 or newer per the technical guide |
+| Node.js | Host minimum `22.12.0` per `package.json`; Docker uses `24.20.0` |
 
 ## Documentation
 
@@ -46,9 +46,9 @@ Start with the local database only:
 
 PostgreSQL is available on `127.0.0.1:5432` by default. Open pgAdmin at `http://localhost:5050` and log in using `PGADMIN_DEFAULT_EMAIL` and `PGADMIN_DEFAULT_PASSWORD` from `.env`. The `GDG Local PostgreSQL` server is preloaded; expand it and enter `POSTGRES_PASSWORD` to connect. Inside Docker it uses `db:5432`. If port 5432 is occupied, change `POSTGRES_PORT` and the port in `DATABASE_URL` together.
 
-`docker compose stop db pgadmin` stops both services and keeps their data. Database models/migrations are subsequent steps. NestJS now imports `PrismaModule` and connects using `PrismaService`. The existing backend container starts with `docker compose up --build backend`; startup now executes `SELECT 1` through Prisma and fails if PostgreSQL is unavailable.
+`docker compose stop db pgadmin` stops both services and keeps their data. Starting only `db` and `pgadmin` does not apply migrations. Start the backend with `gdg backend run` to create the project tables. NestJS imports `PrismaModule` and connects using `PrismaService`. The existing backend container starts with `docker compose up --build backend`; startup now executes `SELECT 1` through Prisma and fails if PostgreSQL is unavailable.
 
-See the [setup guide](SETUP.md) for step-by-step instructions.
+See the [setup guide](SETUP.md) for first-time setup and [Database and Prisma](docs/database-prisma.md) for applying/verifying migrations, troubleshooting and schema-author instructions.
 
 ## Run the full local platform
 
@@ -100,6 +100,8 @@ Frontend-only mode uses `--no-deps` and does not start the backend/database. API
 
 For a different frontend location, export `FRONTEND_PATH` before running `./gdg run`; the default sibling path needs no configuration. Backend-only developers can continue using `docker compose up -d --build backend` without the frontend clone.
 
+Backend Docker startup applies committed migrations with `pnpm prisma:migrate:deploy` before NestJS starts. Migration failure prevents startup; inspect `gdg logs backend`. Re-running applies pending files without resetting the database; review new migration SQL for any data changes. Do not edit applied migrations or reset/baseline existing tables to hide a mismatch.
+
 ## Prisma connection and checks
 
 `PrismaModule` exports `PrismaService`. Import the module into each feature module that needs database access, then inject `PrismaService` into its service. It reads `DATABASE_URL`, uses the PostgreSQL adapter, verifies connectivity on initialization, and disconnects on shutdown. `main.ts` enables NestJS shutdown hooks.
@@ -111,6 +113,7 @@ If the backend Docker container is running, stop it first with `docker compose s
 ```bash
 pnpm install --frozen-lockfile
 docker compose up -d db --wait
+pnpm prisma:migrate:deploy
 pnpm start:dev
 ```
 
@@ -123,6 +126,16 @@ pnpm build
 ```
 
 E2E tests require the local PostgreSQL database and `.env`. They verify the root response, a real SQL query, startup rejection for an unreachable database, and connection cleanup on application close. They do not create tables or modify project data.
+
+For isolated migration checks (host Node.js/pnpm and Docker required):
+
+```bash
+pnpm test:schema:local
+pnpm test:startup:local
+pnpm test:performance:local
+```
+
+These create and remove their own disposable PostgreSQL server. The startup check also builds a temporary backend image and verifies fresh migration, HTTP readiness, preserved data after restart, and refusal to start on a nonempty incompatible schema. The performance command adds synthetic 100/400/800-registration query plans and 40,000 historical registrations; it does not measure API traffic. Normal e2e skips schema cases unless `TEST_DATABASE_URL` is explicitly supplied; `test:schema` requires a separate local `gdg_schema_test_*` database.
 
 ## Product scope at a glance
 
