@@ -303,6 +303,115 @@ try {
     'PASS: explicit failed-history resolution permits a successful retry.',
   );
   console.log(run('pnpm', ['test:e2e'], testEnv));
+  if (process.argv.includes('--performance')) {
+    const database = 'gdg_schema_test_performance';
+    run('docker', ['exec', name, 'createdb', '-U', 'postgres', database]);
+    run('pnpm', ['prisma:migrate:deploy'], { DATABASE_URL: url(database) });
+    sql(database, readFileSync('test/schema-performance.sql', 'utf8'));
+    assert.equal(
+      sql(database, 'SELECT count(*) FROM event_registrations'),
+      '41300',
+    );
+    const measurements = [];
+    for (const [eventId, size] of [
+      [101, 100],
+      [102, 400],
+      [103, 800],
+    ]) {
+      assert.equal(
+        sql(
+          database,
+          `SELECT count(*) FROM event_registrations WHERE event_id=${eventId}`,
+        ),
+        String(size),
+      );
+      const cursor = sql(
+        database,
+        `SELECT min(registration_id) FROM event_registrations WHERE user_id=1`,
+      );
+      const queries = {
+        'PR status page': `SELECT registration_id,user_id,status FROM event_registrations WHERE event_id=${eventId} AND status='PENDING' ORDER BY registered_at,registration_id LIMIT 50`,
+        'My Events cursor page': `SELECT registration_id,event_id,status FROM event_registrations WHERE user_id=1 AND (registered_at,registration_id) > (SELECT registered_at,registration_id FROM event_registrations WHERE registration_id=${cursor}) ORDER BY registered_at,registration_id LIMIT 50`,
+        'Reserved seats': `SELECT count(*) FROM event_registrations WHERE event_id=${eventId} AND status IN ('AWAITING_CONFIRMATION','CONFIRMED')`,
+        'Next waitlist entry': `SELECT registration_id,user_id FROM event_registrations WHERE event_id=${eventId} AND status='WAITLISTED' ORDER BY waitlist_position LIMIT 1`,
+        'Expiry batch': `SELECT registration_id,event_id FROM event_registrations WHERE status='AWAITING_CONFIRMATION' AND confirmation_deadline <= now() ORDER BY confirmation_deadline,registration_id LIMIT 50`,
+        'Due events': `SELECT event_id FROM events WHERE status='published' AND ends_at<=now() ORDER BY ends_at,event_id LIMIT 50`,
+        'Token lookup': `SELECT registration_id,event_id,status FROM event_registrations WHERE attendance_token_hash=md5('${eventId}:5')`,
+        Questions: `SELECT question_id,question_text,question_type FROM event_questions WHERE event_id=${eventId} ORDER BY position`,
+        'Warning flags page': `SELECT r.registration_id,r.user_id,COALESCE((SELECT true FROM event_registrations history JOIN registration_blacklist_entries b ON b.registration_id=history.registration_id WHERE history.user_id=r.user_id AND b.resolved_at IS NULL LIMIT 1),false) AS has_notice FROM event_registrations r WHERE r.event_id=${eventId} ORDER BY r.registered_at,r.registration_id LIMIT 50`,
+      };
+      assert.equal(
+        sql(database, queries['Reserved seats']),
+        String((size * 2) / 5),
+      );
+      assert.equal(
+        sql(database, `SELECT count(*) FROM (${queries['Due events']}) q`),
+        '1',
+      );
+      assert.equal(
+        sql(database, `SELECT count(*) FROM (${queries['Questions']}) q`),
+        '5',
+      );
+      assert.equal(
+        sql(database, `SELECT count(*) FROM (${queries['Token lookup']}) q`),
+        '1',
+      );
+      for (const [query, statement] of Object.entries(queries)) {
+        const plan = JSON.parse(
+          sql(database, `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${statement}`),
+        )[0];
+        const nodes = [];
+        const walk = (node) => {
+          nodes.push(node);
+          for (const child of node.Plans ?? []) walk(child);
+        };
+        walk(plan.Plan);
+        assert(Number.isFinite(plan['Execution Time']));
+        measurements.push({
+          eventSize: size,
+          query,
+          milliseconds: plan['Execution Time'],
+          estimatedRows: plan.Plan['Plan Rows'],
+          actualRows: plan.Plan['Actual Rows'],
+          rowsVisited: nodes
+            .filter((node) => node['Relation Name'])
+            .reduce(
+              (sum, node) =>
+                sum +
+                ((node['Actual Rows'] ?? 0) +
+                  (node['Rows Removed by Filter'] ?? 0) +
+                  (node['Rows Removed by Index Recheck'] ?? 0)) *
+                  (node['Actual Loops'] ?? 1),
+              0,
+            ),
+          sharedHitBlocks: plan.Plan['Shared Hit Blocks'] ?? 0,
+          sharedReadBlocks: plan.Plan['Shared Read Blocks'] ?? 0,
+          indexes: [
+            ...new Set(nodes.map((node) => node['Index Name']).filter(Boolean)),
+          ],
+          sequentialScans: nodes
+            .filter((node) => node['Node Type'] === 'Seq Scan')
+            .map((node) => node['Relation Name']),
+        });
+      }
+    }
+    console.log(
+      'PERFORMANCE_RESULTS ' +
+        JSON.stringify({
+          postgres: sql(database, 'SELECT version()'),
+          docker: run('docker', [
+            'info',
+            '--format',
+            '{{.NCPU}} CPUs / {{.MemTotal}} bytes',
+          ]).trim(),
+          measurements,
+        }),
+    );
+    console.log(
+      'PASS: representative query plans recorded; these are single-query timings, not API throughput or capacity guarantees.',
+    );
+  }
+
   if (process.argv.includes('--startup')) {
     const config = JSON.parse(
       run('docker', [

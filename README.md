@@ -132,9 +132,10 @@ For isolated migration checks (host Node.js/pnpm and Docker required):
 ```bash
 pnpm test:schema:local
 pnpm test:startup:local
+pnpm test:performance:local
 ```
 
-These create and remove their own disposable PostgreSQL server. The startup check also builds a temporary backend image and verifies fresh migration, HTTP readiness, preserved data after restart, and refusal to start on a nonempty incompatible schema. Normal e2e skips schema cases unless `TEST_DATABASE_URL` is explicitly supplied; `test:schema` requires a separate local `gdg_schema_test_*` database.
+These create and remove their own disposable PostgreSQL server. The startup check also builds a temporary backend image and verifies fresh migration, HTTP readiness, preserved data after restart, and refusal to start on a nonempty incompatible schema. The performance command adds synthetic 100/400/800-registration query plans and 40,000 historical registrations; it does not measure API traffic. Normal e2e skips schema cases unless `TEST_DATABASE_URL` is explicitly supplied; `test:schema` requires a separate local `gdg_schema_test_*` database.
 
 ## Product scope at a glance
 
