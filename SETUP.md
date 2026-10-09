@@ -75,7 +75,15 @@ The browser version already includes the server connection. If you use the deskt
 
 You should see thirteen project tables, plus Prisma’s `_prisma_migrations` history table. Refresh **Tables** if needed. Everyone gets the same structure from the committed migrations. Do not create or change tables manually in pgAdmin.
 
-After pulling backend updates, run `gdg backend run` again to apply any new migrations. Existing data is preserved. Teammates use `migrate deploy` through startup; only schema authors create new migrations. If your database already contains manually created project tables, stop and ask the schema owner before proceeding; do not reset or baseline it yourself.
+After pulling backend updates in your backend clone, run `gdg backend run` again to apply any new migrations. Startup does not reset your database. Teammates use `migrate deploy` through startup; only schema authors create new migrations. If your database already contains manually created project tables, stop and ask the schema owner before proceeding; do not reset or baseline it yourself.
+
+To verify the migration, run this from the backend folder:
+
+```bash
+docker compose exec -T backend pnpm exec prisma migrate status --config prisma7.config.ts
+```
+
+Prisma should report that the database schema is up to date. Fresh tables are empty; setup does not create accounts or sample events. For errors or schema changes, see [Database and Prisma](docs/database-prisma.md).
 
 ## Daily commands
 
