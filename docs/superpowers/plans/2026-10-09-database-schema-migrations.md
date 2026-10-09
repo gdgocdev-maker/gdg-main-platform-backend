@@ -10,6 +10,12 @@
 
 **Spec:** [Core Database Design Review](../specs/2026-10-05-core-database-design.md), including its current transition contract dated 2026-10-09.
 
+## Current phased execution agreement
+
+The user requested separate phases and confirmation before committing each completed phase. The [Phase 1 migration-file plan](2026-10-09-phase-1-migration-files.md) supersedes the combined task ordering below: Phase 1 generates/reviews SQL offline; Phase 2 runs isolated database tests/replays; Phase 3 integrates setup; Phase 4 measures query performance. Do not continue into another phase or commit a completed phase before its user review. Previously completed documentation/model commits remain unchanged.
+
+For the initial baseline, use migrate diff --from-empty --to-schema with the existing config; this replaces migrate dev --create-only and needs no authoring/shadow database. Database execution is deferred to Phase 2.
+
 ## Global Constraints
 
 - Thirteen tables: twelve source tables plus registration_blacklist_entries. Preserve source table names and integer IDs; camelCase Prisma fields map to snake_case columns.
@@ -114,3 +120,8 @@ No application migrations or tests have been executed while writing this plan.
 Completed only the user-requested model-definition portion of Task 1: all thirteen models, twelve registration statuses, explicit FK actions, composite same-event answer relationships, optional account/membership links and planned indexes are in prisma/schema.prisma. Offline SQL contract checks failed before implementation and passed afterward. Prisma format/validate/client generation, pnpm check (lint, typecheck, one unit test), pnpm build and git diff --check passed. The generated SQL preview is ignored scratch data, not a committed migration.
 
 Task 1 remains incomplete: custom CHECK constraints, migration history and actual PostgreSQL integration/concurrency/query-plan tests come next. No database was modified, seeded or reset; no commit or push was made.
+
+
+## Phase 1 migration files — 2026-10-09
+
+Authoring/static review completed under the separate Phase 1 plan: prisma/migrations/20261009173345_initial_core/migration.sql and migration_lock.toml created. Exact offline baseline, thirteen tables, six enums and sixteen named checks reviewed; Prisma validation and static artifact checks pass. Independent read-only review found no actionable issue. No database execution or runtime proof; Phase 2 remains pending. Await user confirmation before committing this phase or proceeding.
