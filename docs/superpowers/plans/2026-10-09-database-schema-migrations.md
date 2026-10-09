@@ -12,7 +12,7 @@
 
 ## Current phased execution agreement
 
-The user requested separate phases and confirmation before committing each completed phase. The [Phase 1 migration-file plan](2026-10-09-phase-1-migration-files.md) supersedes the combined task ordering below: Phase 1 generates/reviews SQL offline; Phase 2 runs isolated database tests/replays; Phase 3 integrates setup; Phase 4 measures query performance. Do not continue into another phase or commit a completed phase before its user review. Previously completed documentation/model commits remain unchanged.
+The user requested separate phases and confirmation before committing each completed phase. The [Phase 1 migration-file plan](2026-10-09-phase-1-migration-files.md) supersedes the combined task ordering below: Phase 1 generates/reviews SQL offline; Phase 2 runs isolated database tests/replays; Phase 3 integrates setup; Phase 4 measures query performance. Latest user authorization: after finishing and verifying each phase, commit its scoped changes and start the next phase without another confirmation. No push is authorized. Previously completed documentation/model commits remain unchanged.
 
 For the initial baseline, use migrate diff --from-empty --to-schema with the existing config; this replaces migrate dev --create-only and needs no authoring/shadow database. Database execution is deferred to Phase 2.
 
@@ -125,3 +125,13 @@ Task 1 remains incomplete: custom CHECK constraints, migration history and actua
 ## Phase 1 migration files — 2026-10-09
 
 Authoring/static review completed under the separate Phase 1 plan: prisma/migrations/20261009173345_initial_core/migration.sql and migration_lock.toml created. Exact offline baseline, thirteen tables, six enums and sixteen named checks reviewed; Prisma validation and static artifact checks pass. Independent read-only review found no actionable issue. No database execution or runtime proof; Phase 2 remains pending. Await user confirmation before committing this phase or proceeding.
+
+## Phase 2 verification — 2026-10-09
+
+Added an isolated PostgreSQL 17 test runner, a strict local test-target guard, and 71 database integrity cases. Run `pnpm test:schema:local` with Docker Desktop running and host pnpm installed. It creates its own temporary server with random credentials and a loopback ephemeral port, then removes it; it never uses the application database or named volumes. `pnpm test:schema` requires an explicit separate local `TEST_DATABASE_URL` naming `gdg_schema_test_*`; normal e2e skips this suite when that variable is absent.
+
+Observed: the empty database fails the suite before migration; both fresh replays pass 71 cases, produce equivalent schema dumps, and repeat deploy reports no pending migrations. An intentionally failing temporary migration copy leaves no domain tables/enums, retains a failed Prisma history record, and succeeds after explicit `migrate resolve --rolled-back` followed by deployment of the unchanged real migration. Prisma can mask the division-by-zero error with an aborted-transaction error; the runner verifies the original PostgreSQL log as well as rollback state. Application e2e plus schema tests pass 75 cases. `pnpm check` passes lint, type checking and 12 unit cases. No migration was applied to the developer database. The rollback fixture intentionally supports the single initial migration and stops when history grows until updated.
+
+These tests prove row integrity, uniqueness under competing writes, replay and recovery; service workflow, QR security, authorization and API traffic remain deferred to their implementations.
+
+Fresh read-only Phase 2 review found no safety/correctness blocker. Its missing question-position and token-hash uniqueness coverage was added; the runner now also checks all thirteen domain tables for leftover fixtures.

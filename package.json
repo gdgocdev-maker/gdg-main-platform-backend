@@ -22,7 +22,10 @@
     "test:cov": "vitest run --coverage",
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
     "test:e2e": "pnpm prisma:generate && vitest run --config ./vitest.config.e2e.ts",
-    "prisma:generate": "prisma generate --config prisma7.config.ts"
+    "prisma:generate": "prisma generate --config prisma7.config.ts",
+    "prisma:migrate:deploy": "prisma migrate deploy --config prisma7.config.ts",
+    "test:schema": "pnpm prisma:generate && vitest run --config vitest.config.schema.ts",
+    "test:schema:local": "node test/run-schema-tests.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",
