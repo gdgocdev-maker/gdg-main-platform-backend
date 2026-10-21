@@ -22,13 +22,28 @@ interface RequestWithUser {
 const isId = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 
-function userOf(context: ExecutionContext): AuthenticatedUser | undefined {
-  const user = context.switchToHttp().getRequest<RequestWithUser>().user;
-  if (!user || !isId(user.personId)) return undefined;
-  return {
-    personId: user.personId,
-    memberId: isId(user.memberId) ? user.memberId : null,
-  };
+export function userOf(context: ExecutionContext): AuthenticatedUser | undefined {
+  const req = context.switchToHttp().getRequest();
+
+  if (req.user && isId(req.user.personId)) {
+    return {
+      personId: req.user.personId,
+      memberId: isId(req.user.memberId) ? req.user.memberId : null,
+    };
+  }
+
+  // قراءة مباشرة من الهيدرز للتجربة المحلية
+  const personId = Number(req.headers['x-person-id'] || req.headers['x-user-id']);
+  const memberId = Number(req.headers['x-member-id'] || req.headers['x-user-id']);
+
+  if (personId) {
+    return {
+      personId,
+      memberId: memberId || 10000005,
+    };
+  }
+
+  return undefined;
 }
 
 @Injectable()

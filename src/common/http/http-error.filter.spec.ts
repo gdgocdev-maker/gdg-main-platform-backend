@@ -136,6 +136,27 @@ describe('HttpErrorFilter', () => {
     if (status < 500) expect(logs).toEqual([]);
   });
 
+  it.each([
+    [
+      'EVENT_HAS_REGISTRATIONS',
+      'An event with registrations cannot be deleted.',
+    ],
+    [
+      'QUESTION_HAS_ANSWERS',
+      'A question with submitted answers cannot be removed.',
+    ],
+  ])('preserves the approved event conflict code %s', (errorCode, message) => {
+    h.filter.catch(new ConflictException(message, { errorCode }), h.host);
+
+    expect(h.response.statusCode).toBe(409);
+    expect(h.response.body).toEqual({
+      success: false,
+      message,
+      data: null,
+      error: { code: errorCode, details: [] },
+    });
+  });
+
   it.each(['FORBIDDEN', 'UNKNOWN_CODE', 'VALIDATION_ERROR', 'BAD_REQUEST'])(
     'uses the 400 fallback for unowned or mismatched code %s',
     (errorCode) => {

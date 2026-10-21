@@ -44,6 +44,17 @@ Anyone else receives 403 `FORBIDDEN`.
 
 Answers are stored as text; checkbox choices as a JSON array string. The QR token is random and contains no personal data: the database keeps its SHA-256 hash and an AES-256-GCM copy keyed by `ATTENDANCE_TOKEN_KEY` (set it in `.env`).
 
+## DATA event management and dashboard
+
+| Route | Behavior |
+| --- | --- |
+| `POST /events` | Creates a draft event and optional question list. `createdByMemberId` and `committeeId` are assigned from the authenticated member and authorized DATA membership; they cannot be supplied in the body. |
+| `PATCH /events/:eventId` | Updates supplied event fields. If `questions` is included, it is the complete replacement list; retain existing question IDs to edit them. Questions with submitted answers cannot be removed. |
+| `DELETE /events/:eventId` | Deletes an event created by the requester. Events with registrations cannot be deleted. |
+| `GET /dashboard/events` | Lists events created by the requester or belonging to any of their active committees, including every event status. |
+
+Create requires `name`, `startsAt`, `endsAt`, `capacity`, and `registrationDeadline`. Question fields are `questionText`, `questionType`, optional `isRequired`, and optional `options`; choice questions require at least one option. Update accepts the same event fields optionally. Success responses use the standard `apiSuccess` envelope. Expected failures: 400 for invalid input, 401 for unauthenticated requests, 403 for missing DATA leadership/permission or non-owner mutations, 404 for unknown events, and 409 when a deletion/removal would conflict with existing registrations or answers.
+
 ## PR endpoints
 
 ### GET /events/:eventId/registrations
@@ -100,6 +111,8 @@ TEST_DATABASE_URL="postgresql://USER:PASSWORD@localhost:5433/gdg_schema_test_reg
 ```
 
 Create that database once and apply migrations to it with `DATABASE_URL` pointing at it.
+
+The event-management authorization and ownership suite is `test/event-management.e2e-spec.ts` and uses the same dedicated-database requirement.
 
 ## TBD
 

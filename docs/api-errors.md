@@ -128,6 +128,8 @@ Malformed JSON, JSON roots rejected by the existing strict parser and invalid UR
 | 403 | `FORBIDDEN` | You do not have permission to perform this action. |
 | 404 | `NOT_FOUND` | The requested resource was not found. |
 | 409 | `CONFLICT` | The request conflicts with the current state. |
+| 409 | `EVENT_HAS_REGISTRATIONS` | The event has registrations and cannot be deleted. |
+| 409 | `QUESTION_HAS_ANSWERS` | The question has submitted answers and cannot be removed. |
 | 500 | `INTERNAL_ERROR` | An unexpected error occurred. |
 | Other known 4xx/5xx | `HTTP_ERROR` | The request could not be completed. |
 
