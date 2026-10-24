@@ -14,5 +14,6 @@ import { TokenVerifierService } from './token-verifier.service.js';
     AuthService,
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
+  exports: [AuthService],
 })
 export class AuthModule {}

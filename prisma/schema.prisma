@@ -44,6 +44,18 @@ enum BlacklistReason {
   NO_CHECK_IN
 }
 
+enum MembershipRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum MembershipCommitteeDecision {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model Person {
   personId        Int      @id @default(autoincrement()) @map("person_id")
   authUserId      String?  @unique @map("auth_user_id") @db.Uuid
@@ -63,6 +75,7 @@ model Person {
 
   member        Member?
   registrations EventRegistration[] @relation("RegistrationOwner")
+  membershipRequest MembershipRequest?
 
   @@map("person")
 }
@@ -124,6 +137,7 @@ model Member {
   checkedInRegistrations   EventRegistration[]          @relation("RegistrationCheckInStaff")
   excusedRegistrations     EventRegistration[]          @relation("RegistrationExcuseStaff")
   resolvedBlacklistEntries RegistrationBlacklistEntry[] @relation("BlacklistResolver")
+  reviewedMembershipCommittees MembershipRequestCommittee[] @relation("MembershipDecisionReviewer")
 
   @@map("member")
 }
@@ -180,6 +194,7 @@ model Committee {
   members     MemberCommittee[]
   events      Event[]
   permissions CommitteePermission[]
+  membershipRequests MembershipRequestCommittee[]
 
   @@index([parentCommitteeId])
   @@map("committee")
@@ -215,6 +230,38 @@ model MemberCommittee {
   @@unique([memberId, committeeId])
   @@index([committeeId])
   @@map("member_committee")
+}
+
+model MembershipRequest {
+  membershipRequestId Int                     @id @default(autoincrement()) @map("membership_request_id")
+  personId            Int                     @unique @map("person_id")
+  status              MembershipRequestStatus @default(PENDING)
+  applicationData     Json                    @map("application_data") @db.JsonB
+  createdAt           DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  person     Person                       @relation(fields: [personId], references: [personId], onDelete: Restrict, onUpdate: NoAction)
+  committees MembershipRequestCommittee[]
+
+  @@map("membership_request")
+}
+
+model MembershipRequestCommittee {
+  membershipRequestCommitteeId Int                        @id @default(autoincrement()) @map("membership_request_committee_id")
+  membershipRequestId          Int                        @map("membership_request_id")
+  committeeId                  Int                        @map("committee_id")
+  requestedRole                String                     @map("requested_role") @db.VarChar(100)
+  status                       MembershipCommitteeDecision @default(PENDING)
+  decidedByMemberId            Int?                       @map("decided_by_member_id")
+  decidedAt                    DateTime?                  @map("decided_at") @db.Timestamptz(6)
+
+  membershipRequest MembershipRequest @relation(fields: [membershipRequestId], references: [membershipRequestId], onDelete: Cascade, onUpdate: NoAction)
+  committee         Committee         @relation(fields: [committeeId], references: [committeeId], onDelete: Restrict, onUpdate: NoAction)
+  reviewer          Member?           @relation("MembershipDecisionReviewer", fields: [decidedByMemberId], references: [memberId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([membershipRequestId, committeeId])
+  @@index([committeeId, status, membershipRequestId])
+  @@map("membership_request_committee")
 }
 
 model Event {

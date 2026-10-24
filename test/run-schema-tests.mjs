@@ -50,6 +50,8 @@ const expectedTables = [
   'role',
   'member_role',
   'member_skill',
+  'membership_request',
+  'membership_request_committee',
   'skill',
   'committee_permission',
 ].sort();

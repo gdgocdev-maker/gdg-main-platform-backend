@@ -26,6 +26,9 @@ const {
   deleteUser,
   inviteUserByEmail,
   updateUserById,
+  verifyOtp,
+  refreshSession,
+  getUser,
 } = vi.hoisted(() => ({
   signInWithPassword: vi.fn(),
   signUp: vi.fn(),
@@ -33,6 +36,9 @@ const {
   deleteUser: vi.fn(),
   inviteUserByEmail: vi.fn(),
   updateUserById: vi.fn(),
+  verifyOtp: vi.fn(),
+  refreshSession: vi.fn(),
+  getUser: vi.fn(),
 }));
 
 vi.mock('@supabase/supabase-js', async (importOriginal) => ({
@@ -41,6 +47,9 @@ vi.mock('@supabase/supabase-js', async (importOriginal) => ({
     auth: {
       signInWithPassword,
       signUp,
+      verifyOtp,
+      refreshSession,
+      getUser,
       resetPasswordForEmail,
       admin: { deleteUser, inviteUserByEmail, updateUserById },
     },
@@ -280,13 +289,31 @@ describe('POST /auth/signup', () => {
     expect(deleteUser).toHaveBeenCalledWith('new-auth-user');
   });
 
-  it('never creates a person when supabase gives no session', async () => {
+  it('creates the person but waits for email verification when supabase gives no session', async () => {
     signUp.mockResolvedValue({
       data: { user: { id: 'new-auth-user' }, session: null },
       error: null,
     });
 
-    await expect(controller.signup(body)).rejects.toThrow();
+    await expect(controller.signup(body)).resolves.toMatchObject({
+      data: { emailVerificationRequired: true },
+    });
+    expect(create).toHaveBeenCalledWith({
+      data: {
+        authUserId: 'new-auth-user',
+        fullName: 'Sara Visitor',
+        emailPersonal: 'sara@example.test',
+      },
+    });
+  });
+
+  it('rejects Supabase’s obfuscated duplicate user instead of creating a ghost person', async () => {
+    signUp.mockResolvedValue({
+      data: { user: { id: 'existing-auth-user', identities: [] }, session: null },
+      error: null,
+    });
+
+    await expect(controller.signup(body)).rejects.toThrow(ConflictException);
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -302,6 +329,55 @@ describe('POST /auth/signup', () => {
         metatype: SignupDto,
       }),
     ).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('POST /auth/verify-email', () => {
+  const body = { email: 'noura@example.test', token: '123456' };
+
+  beforeEach(() => {
+    verifyOtp.mockReset().mockResolvedValue({ data: { session: SESSION }, error: null });
+  });
+
+  it('returns the verified Supabase session', async () => {
+    await expect(controller.verifySignupEmail(body)).resolves.toMatchObject({ data: TOKENS });
+    expect(verifyOtp).toHaveBeenCalledWith({ ...body, type: 'email' });
+  });
+
+  it('rejects invalid verification codes', async () => {
+    verifyOtp.mockResolvedValue({ data: { session: null }, error: new Error('invalid') });
+    await expect(controller.verifySignupEmail(body)).rejects.toThrow(UnauthorizedException);
+  });
+});
+
+describe('POST /auth/refresh', () => {
+  beforeEach(() => {
+    refreshSession.mockReset().mockResolvedValue({ data: { session: SESSION }, error: null });
+  });
+
+  it('returns a refreshed Supabase session', async () => {
+    await expect(controller.refresh({ refreshToken: 'refresh' })).resolves.toMatchObject({ data: TOKENS });
+    expect(refreshSession).toHaveBeenCalledWith({ refresh_token: 'refresh' });
+  });
+});
+
+describe('Supabase email confirmation check', () => {
+  const auth = new AuthService(
+    {} as PrismaService,
+    { getOrThrow: () => 'test-value' } as unknown as ConfigService,
+  );
+
+  beforeEach(() => getUser.mockReset());
+
+  it('requires Supabase to confirm the account email', async () => {
+    getUser.mockResolvedValue({ data: { user: { email_confirmed_at: '2026-10-24T00:00:00Z' } }, error: null });
+    await expect(auth.isEmailVerified('verified-token')).resolves.toBe(true);
+    expect(getUser).toHaveBeenCalledWith('verified-token');
+  });
+
+  it('does not treat an unconfirmed account as verified', async () => {
+    getUser.mockResolvedValue({ data: { user: { email_confirmed_at: null } }, error: null });
+    await expect(auth.isEmailVerified('unverified-token')).resolves.toBe(false);
   });
 });
 

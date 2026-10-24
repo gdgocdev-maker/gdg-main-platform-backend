@@ -15,6 +15,8 @@ import { CheckEmailDto } from './check-email.dto.js';
 import { LoginDto } from './login.dto.js';
 import { RequestSetupLinkDto, SetupPasswordDto } from './setup-password.dto.js';
 import { SignupDto } from './signup.dto.js';
+import { VerifySignupEmailDto } from './verify-signup-email.dto.js';
+import { RefreshSessionDto } from './refresh-session.dto.js';
 
 @Controller()
 export class AuthController {
@@ -35,6 +37,18 @@ export class AuthController {
   @Post('auth/signup')
   async signup(@Body() body: SignupDto) {
     return apiSuccess(await this.auth.signup(body));
+  }
+
+  @Post('auth/verify-email')
+  @HttpCode(200)
+  async verifySignupEmail(@Body() body: VerifySignupEmailDto) {
+    return apiSuccess(await this.auth.verifySignupEmail(body.email, body.token));
+  }
+
+  @Post('auth/refresh')
+  @HttpCode(200)
+  async refresh(@Body() body: RefreshSessionDto) {
+    return apiSuccess(await this.auth.refreshSession(body.refreshToken));
   }
 
   @Post('auth/setup-password/request')

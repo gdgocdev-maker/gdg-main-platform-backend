@@ -82,6 +82,32 @@ export class AuthService {
     return tokens(data.session);
   }
 
+  async verifySignupEmail(email: string, token: string) {
+    const { data, error } = await this.client().auth.verifyOtp({
+      email,
+      token,
+      type: 'email',
+    });
+    if (error || !data.session) throw new UnauthorizedException();
+    return tokens(data.session);
+  }
+
+  async refreshSession(refreshToken: string) {
+    const { data, error } = await this.client().auth.refreshSession({
+      refresh_token: refreshToken,
+    });
+    if (error || !data.session) throw new UnauthorizedException();
+    return tokens(data.session);
+  }
+
+  // Supabase access tokens do not include a stable email-confirmed claim.
+  // Ask Supabase Auth for the user tied to this already-verified JWT instead.
+  async isEmailVerified(accessToken: string): Promise<boolean> {
+    const { data, error } = await this.client().auth.getUser(accessToken);
+    if (error || !data.user) return false;
+    return Boolean(data.user.email_confirmed_at);
+  }
+
   // tells the frontend which screen comes after the email box
   async checkEmail({ email }: CheckEmailDto) {
     const person = await this.findPersonByEmail(email);
@@ -110,10 +136,7 @@ export class AuthService {
       throw new BadRequestException('password is too weak.');
     }
     if (error) throw error;
-    // email confirmation is off so supabase logs them in right away
-    if (!data.user || !data.session) {
-      throw new Error('Supabase signup returned no session');
-    }
+    if (!data.user || data.user.identities?.length === 0) throw emailAlreadyExists();
 
     try {
       await this.prisma.person.create({
@@ -136,7 +159,9 @@ export class AuthService {
       throw personError;
     }
 
-    return tokens(data.session);
+    // With email confirmation enabled, Supabase returns a user but no session.
+    // The frontend verifies the OTP before it can submit an application.
+    return data.session ? tokens(data.session) : { emailVerificationRequired: true };
   }
 
   // step 1: email them a link to choose a password
