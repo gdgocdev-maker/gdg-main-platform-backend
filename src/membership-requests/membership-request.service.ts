@@ -27,8 +27,6 @@ export const APPLICATIONS_DECIDE = 'applications.decide';
 const DEVELOPER_LEADERS_DECIDE = 'applications.developer_leaders.decide';
 
 type ApprovalScope = 'COMMITTEE' | 'DEVELOPER_COMMITTEES' | 'CLUB';
-type ScopedRequest = { approvalScope: string; committeeId: number; personId: number };
-type Reader = Pick<Prisma.TransactionClient, 'memberCommittee' | 'memberRole'>;
 
 const requestInclude = {
   person: {
@@ -217,16 +215,15 @@ export class MembershipRequestService {
   async listLeadership(scope: 'CLUB' | 'DEVELOPER_COMMITTEES', actor: AuthenticatedUser) {
     if (!actor.memberId) throw new ForbiddenException();
     await this.assertLeadershipPermission(actor.memberId, scope);
-    // Nobody decides their own request; club leadership also picks up requests
-    // that have nobody else to decide them at their own level.
+    // Nobody decides their own request. Each approval tier sees only requests
+    // filed for that tier; committee requests never fall through to group leadership.
     const notOwn = { membershipRequest: { personId: { not: actor.personId } } };
     const pending = await this.prisma.membershipRequestCommittee.findMany({
-      where: { status: MembershipCommitteeDecision.PENDING, ...notOwn, ...(scope === 'CLUB' ? {} : { approvalScope: scope }) },
+      where: { status: MembershipCommitteeDecision.PENDING, approvalScope: scope, ...notOwn },
       orderBy: { membershipRequest: { createdAt: 'asc' } },
       include: { membershipRequest: { include: requestInclude }, committee: { select: { committeeCode: true, committeeName: true } } },
     });
-    const scopeOf = await this.approvalScopeResolver(this.prisma, pending.map((row) => row.committeeId));
-    const rows = pending.filter((row) => scopeOf({ ...row, personId: row.membershipRequest.personId }) === scope);
+    const rows = pending.filter((row) => row.approvalScope === scope);
     const globalRoleRows = scope === 'CLUB'
       ? await this.prisma.membershipRequestGlobalRole.findMany({
           where: { status: MembershipCommitteeDecision.PENDING, ...notOwn },
@@ -254,16 +251,18 @@ export class MembershipRequestService {
         },
       });
       if (!row) throw new NotFoundException('Leadership request not found.');
-      const scope = (await this.approvalScopeResolver(tx, [row.committeeId]))({ ...row, personId: row.membershipRequest.personId });
-      // Requests the committee can still decide stay with its leaders.
-      if (scope === 'COMMITTEE') throw new NotFoundException('Leadership request not found.');
+      // Requests stay with the approval tier selected when they were submitted.
+      if (row.approvalScope !== 'CLUB' && row.approvalScope !== 'DEVELOPER_COMMITTEES') {
+        throw new NotFoundException('Leadership request not found.');
+      }
+      const scope = row.approvalScope;
       await this.assertLeadershipPermission(actor.memberId!, scope);
       if (row.membershipRequest.personId === actor.personId) throw new ForbiddenException('You cannot approve your own request.');
       if (row.status !== MembershipCommitteeDecision.PENDING) throw new ConflictException('This request has already been decided.');
       if (decision === MembershipCommitteeDecision.APPROVED) {
         const member = await this.getOrCreateActiveMember(tx, row.membershipRequest.personId);
         // A committee-level request that moved up still only grants membership.
-        const role = row.approvalScope === 'COMMITTEE' ? 'Member' : row.requestedRole;
+        const role = row.requestedRole;
         await tx.memberCommittee.upsert({
           where: { memberId_committeeId: { memberId: member.memberId, committeeId: committee.committeeId } },
           create: { memberId: member.memberId, committeeId: committee.committeeId, role },
@@ -338,39 +337,6 @@ export class MembershipRequestService {
   private async assertLeadershipPermission(memberId: number, scope: 'CLUB' | 'DEVELOPER_COMMITTEES') {
     const permission = scope === 'CLUB' ? 'applications.club_leaders.decide' : DEVELOPER_LEADERS_DECIDE;
     if (!(await this.access.hasGlobalPermission(memberId, permission))) throw new ForbiddenException();
-  }
-
-  // Who actually decides a request. It moves up to club leadership when no one
-  // other than the applicant can decide it where it was filed: a committee with
-  // no active Leader or Co-Leader, or no other developer-committees leader.
-  private async approvalScopeResolver(db: Reader, committeeIds: number[]) {
-    const today = new Date(new Date().toISOString().slice(0, 10));
-    const [committeeLeaders, developerLeaders] = await Promise.all([
-      // Committee Leaders and Co-Leaders hold applications.decide for their committee.
-      db.memberCommittee.findMany({
-        where: { committeeId: { in: [...new Set(committeeIds)] }, role: { in: ['Leader', 'Co-Leader'] }, member: { isActive: true } },
-        select: { committeeId: true, member: { select: { personId: true } } },
-      }),
-      db.memberRole.findMany({
-        where: {
-          member: { isActive: true },
-          role: { permissions: { some: { code: DEVELOPER_LEADERS_DECIDE } } },
-          AND: [{ OR: [{ startsOn: null }, { startsOn: { lte: today } }] }, { OR: [{ endsOn: null }, { endsOn: { gte: today } }] }],
-        },
-        select: { member: { select: { personId: true } } },
-      }),
-    ]);
-    const someoneElse = (personIds: number[], applicant: number) => personIds.some((personId) => personId !== applicant);
-    return ({ approvalScope, committeeId, personId }: ScopedRequest): ApprovalScope => {
-      if (approvalScope === 'COMMITTEE') {
-        const leaders = committeeLeaders.filter((row) => row.committeeId === committeeId).map((row) => row.member.personId);
-        return someoneElse(leaders, personId) ? 'COMMITTEE' : 'CLUB';
-      }
-      if (approvalScope === 'DEVELOPER_COMMITTEES') {
-        return someoneElse(developerLeaders.map((row) => row.member.personId), personId) ? 'DEVELOPER_COMMITTEES' : 'CLUB';
-      }
-      return 'CLUB';
-    };
   }
 
   private async refreshAggregateStatus(tx: Prisma.TransactionClient, requestId: number) {

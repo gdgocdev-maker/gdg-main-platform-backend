@@ -223,20 +223,19 @@ describe('MembershipRequestService.decide', () => {
 });
 
 describe('MembershipRequestService approval routing', () => {
-  it('moves a developer leader request to club leadership when the applicant is the only developer-committees leader', async () => {
+  it('keeps a developer leader request with developer leadership when the applicant is the only developer-committees leader', async () => {
     tx.memberRole.findMany.mockResolvedValue([{ member: { personId: 61 } }]);
     tx.membershipRequestCommittee.findUnique.mockResolvedValue(leadershipRow({ approvalScope: 'DEVELOPER_COMMITTEES', requestedRole: 'Co-Leader' }));
     await service.decideLeadershipCommittee(40, 'DATA', 'APPROVED', actor);
-    expect(hasGlobalPermission).toHaveBeenCalledWith(actor.memberId, 'applications.club_leaders.decide');
+    expect(hasGlobalPermission).toHaveBeenCalledWith(actor.memberId, 'applications.developer_leaders.decide');
     expect(tx.memberCommittee.upsert).toHaveBeenCalledWith(expect.objectContaining({ create: { memberId: 99, committeeId: 3, role: 'Co-Leader' } }));
   });
 
-  it('lets club leadership decide a member request for a committee with no leader, granting only membership', async () => {
+  it('keeps a member request out of club leadership even when its committee has no leader', async () => {
     tx.memberCommittee.findMany.mockResolvedValue([]);
     tx.membershipRequestCommittee.findUnique.mockResolvedValue(leadershipRow({ approvalScope: 'COMMITTEE', requestedRole: 'Member' }));
-    await service.decideLeadershipCommittee(40, 'DMD', 'APPROVED', actor);
-    expect(hasGlobalPermission).toHaveBeenCalledWith(actor.memberId, 'applications.club_leaders.decide');
-    expect(tx.memberCommittee.upsert).toHaveBeenCalledWith(expect.objectContaining({ create: { memberId: 99, committeeId: 3, role: 'Member' } }));
+    await expect(service.decideLeadershipCommittee(40, 'DMD', 'APPROVED', actor)).rejects.toBeInstanceOf(NotFoundException);
+    expect(tx.memberCommittee.upsert).not.toHaveBeenCalled();
   });
 
   it('keeps a member request with its committee while the committee has a leader', async () => {
@@ -245,7 +244,7 @@ describe('MembershipRequestService approval routing', () => {
     expect(tx.memberCommittee.upsert).not.toHaveBeenCalled();
   });
 
-  it('lists escalated requests for club leadership and never the reviewer’s own request', async () => {
+  it('lists only club-tier requests for club leadership and never the reviewer’s own request', async () => {
     const request = (personId: number) => ({
       membershipRequestId: personId,
       personId,
@@ -259,7 +258,7 @@ describe('MembershipRequestService approval routing', () => {
     const committee = { committeeCode: 'DMD', committeeName: 'Digital Media and Design' };
     const findMany = vi.fn().mockResolvedValue([
       { committeeId: 3, approvalScope: 'COMMITTEE', requestedRole: 'Member', status: Decision.PENDING, committee, membershipRequest: request(61) },
-      { committeeId: 9, approvalScope: 'COMMITTEE', requestedRole: 'Member', status: Decision.PENDING, committee, membershipRequest: request(62) },
+      { committeeId: 9, approvalScope: 'CLUB', requestedRole: 'Co-Leader', status: Decision.PENDING, committee, membershipRequest: request(62) },
     ]);
     const listing = new MembershipRequestService({
       ...prisma,
@@ -272,9 +271,9 @@ describe('MembershipRequestService approval routing', () => {
     const result = await listing.listLeadership('CLUB', actor);
 
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ membershipRequest: { personId: { not: actor.personId } } }),
+      where: expect.objectContaining({ approvalScope: 'CLUB', membershipRequest: { personId: { not: actor.personId } } }),
     }));
-    // Committee 3 has its own leader; committee 9 has none, so only it reaches club leadership.
+    // The committee member request is never escalated into the club leadership queue.
     expect(result.map((item) => item.id)).toEqual([62]);
   });
 });
