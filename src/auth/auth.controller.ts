@@ -113,8 +113,12 @@ export class AuthController {
         await this.auth.logout(refreshToken, accessToken, request.verifiedAccessTokenExpiresAt);
       }
     } finally {
-      response?.clearCookie('gdg_access', { path: '/', sameSite: 'strict', secure: process.env.NODE_ENV === 'production' });
-      response?.clearCookie('gdg_refresh', { path: '/auth', sameSite: 'strict', secure: process.env.NODE_ENV === 'production' });
+      const secure = process.env.NODE_ENV === 'production';
+      response?.clearCookie('gdg_access', { path: '/api', sameSite: 'strict', secure });
+      response?.clearCookie('gdg_refresh', { path: '/api/auth', sameSite: 'strict', secure });
+      // Remove cookies from the previous direct-to-API path during migration.
+      response?.clearCookie('gdg_access', { path: '/', sameSite: 'strict', secure });
+      response?.clearCookie('gdg_refresh', { path: '/auth', sameSite: 'strict', secure });
     }
     return apiSuccess({ authenticated: false });
   }
@@ -185,9 +189,13 @@ export class AuthController {
   private setSessionCookies(response: Response | undefined, session: { accessToken: string; refreshToken: string; expiresAt?: number }) {
     if (!response) return;
     const secure = process.env.NODE_ENV === 'production';
+    // Keep the previous paths briefly so the old frontend keeps working during the two-service rollout.
+    const legacySameSite = secure ? 'none' : 'strict';
     const accessMaxAge = Math.max(1, (session.expiresAt ?? Math.floor(Date.now() / 1000) + 3600) * 1000 - Date.now());
-    response.cookie('gdg_access', session.accessToken, { httpOnly: true, secure, sameSite: 'strict', path: '/', maxAge: accessMaxAge });
-    response.cookie('gdg_refresh', session.refreshToken, { httpOnly: true, secure, sameSite: 'strict', path: '/auth', maxAge: 30 * 24 * 60 * 60 * 1000 });
+    response.cookie('gdg_access', session.accessToken, { httpOnly: true, secure, sameSite: legacySameSite, path: '/', maxAge: accessMaxAge });
+    response.cookie('gdg_refresh', session.refreshToken, { httpOnly: true, secure, sameSite: legacySameSite, path: '/auth', maxAge: 30 * 24 * 60 * 60 * 1000 });
+    response.cookie('gdg_access', session.accessToken, { httpOnly: true, secure, sameSite: 'strict', path: '/api', maxAge: accessMaxAge });
+    response.cookie('gdg_refresh', session.refreshToken, { httpOnly: true, secure, sameSite: 'strict', path: '/api/auth', maxAge: 30 * 24 * 60 * 60 * 1000 });
   }
 
   private cookieValue(request: Request, name: string) {

@@ -126,6 +126,7 @@ describe('POST /auth/login', () => {
     findUnique.mockReset().mockResolvedValue({ isActive: true });
     signOut.mockReset().mockResolvedValue({ error: null });
     cookie.mockReset();
+    response.clearCookie.mockReset();
   });
 
   it('sets httpOnly session cookies instead of returning provider tokens', async () => {
@@ -138,8 +139,10 @@ describe('POST /auth/login', () => {
       error: null,
       data: { authenticated: true },
     });
-    expect(cookie).toHaveBeenCalledWith('gdg_access', 'access', expect.objectContaining({ httpOnly: true, sameSite: 'strict' }));
+    expect(cookie).toHaveBeenCalledWith('gdg_access', 'access', expect.objectContaining({ httpOnly: true, sameSite: 'strict', path: '/' }));
     expect(cookie).toHaveBeenCalledWith('gdg_refresh', 'refresh', expect.objectContaining({ httpOnly: true, sameSite: 'strict', path: '/auth' }));
+    expect(cookie).toHaveBeenCalledWith('gdg_access', 'access', expect.objectContaining({ httpOnly: true, sameSite: 'strict', path: '/api' }));
+    expect(cookie).toHaveBeenCalledWith('gdg_refresh', 'refresh', expect.objectContaining({ httpOnly: true, sameSite: 'strict', path: '/api/auth' }));
   });
 
   it('rejects a wrong email or password with 401', async () => {
@@ -526,8 +529,10 @@ describe('POST /auth/logout', () => {
     expect(revokedUpsert).toHaveBeenCalledWith(expect.objectContaining({
       create: expect.objectContaining({ expiresAt: new Date(expiresAt * 1000) }),
     }));
-    expect(response.clearCookie).toHaveBeenCalledWith('gdg_access', expect.anything());
-    expect(response.clearCookie).toHaveBeenCalledWith('gdg_refresh', expect.anything());
+    expect(response.clearCookie).toHaveBeenCalledWith('gdg_access', expect.objectContaining({ path: '/api', sameSite: 'strict' }));
+    expect(response.clearCookie).toHaveBeenCalledWith('gdg_refresh', expect.objectContaining({ path: '/api/auth', sameSite: 'strict' }));
+    expect(response.clearCookie).toHaveBeenCalledWith('gdg_access', expect.objectContaining({ path: '/', sameSite: 'strict' }));
+    expect(response.clearCookie).toHaveBeenCalledWith('gdg_refresh', expect.objectContaining({ path: '/auth', sameSite: 'strict' }));
     expect(signOut).toHaveBeenCalledWith(SESSION.access_token, 'local');
   });
 });
