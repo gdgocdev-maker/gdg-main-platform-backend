@@ -100,6 +100,7 @@ const controller = new AuthController(
       $transaction: transaction,
     } as unknown as PrismaService,
     { getOrThrow: () => 'http://localhost:3000/en/reset-password' } as unknown as ConfigService,
+    { sendMail: vi.fn() } as never,
   ),
 );
 
@@ -541,6 +542,7 @@ describe('Supabase email confirmation check', () => {
   const auth = new AuthService(
     {} as PrismaService,
     { getOrThrow: () => 'test-value' } as unknown as ConfigService,
+    { sendMail: vi.fn() } as never,
   );
 
   beforeEach(() => getUser.mockReset());

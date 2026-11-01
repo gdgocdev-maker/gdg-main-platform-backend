@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module.js';
+import { getAllowedFrontendOrigins } from './common/http/frontend-origins.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -11,10 +12,8 @@ async function bootstrap() {
   }
   app.getHttpAdapter().getInstance().set('trust proxy', trustProxyHops);
   app.enableCors({
-  origin: [
-    process.env.FRONTEND_URL ?? 'http://localhost:3000',
-    'https://gdg-leeniverse.onrender.com',
-  ],    credentials: true,
+    origin: getAllowedFrontendOrigins(),
+    credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     maxAge: 600,

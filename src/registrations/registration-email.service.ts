@@ -5,7 +5,7 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import nodemailer from 'nodemailer';
+import { SmtpEmailService } from '../common/email/smtp-email.service.js';
 
 export type RegistrationEmailKind =
   'ACCEPTED' | 'REJECTED' | 'PROMOTED' | 'CONFIRMED';
@@ -50,7 +50,10 @@ function formatDate(date: Date): string {
 export class RegistrationEmailService {
   private readonly logger = new Logger(RegistrationEmailService.name);
 
-  constructor(@Inject(ConfigService) private readonly config: ConfigService) {}
+  constructor(
+    @Inject(ConfigService) private readonly config: ConfigService,
+    @Inject(SmtpEmailService) private readonly smtp: SmtpEmailService,
+  ) {}
 
   async send(email: RegistrationEmail): Promise<void> {
     if (!email.to) {
@@ -63,12 +66,8 @@ export class RegistrationEmailService {
       return;
     }
 
-    const host = this.config.get<string>('SMTP_HOST');
-    const port = Number(this.config.get<string>('SMTP_PORT') ?? 465);
-    const user = this.config.get<string>('SMTP_USER');
-    const pass = this.config.get<string>('SMTP_PASS')?.replace(/\s+/g, '');
     const from = this.config.get<string>('AUTH_EMAIL_FROM');
-    if (!host || !Number.isInteger(port) || !user || !pass || !from) {
+    if (!this.smtp.isConfigured() || !from) {
       throw new ServiceUnavailableException(
         'Event email delivery is not configured.',
       );
@@ -142,29 +141,19 @@ export class RegistrationEmailService {
       ? `<a href="${escapeHtml(eventUrl)}">Open your event registration</a>`
       : '';
     const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#202124;line-height:1.6"><h2>${escapeHtml(subject)}</h2><p>${escapeHtml(message)}</p>${details.map((line) => `<p>${escapeHtml(line)}</p>`).join('')}${qrHtml}<p>${responseLink}</p><p>GDG on Campus - University of Jeddah</p></body></html>`;
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465,
-      auth: { user, pass },
+    await this.smtp.sendMail({
+      from,
+      to: email.to,
+      subject,
+      text,
+      html,
+      attachments,
+    }, { unavailableMessage: 'Event email delivery is not configured.' });
+    this.logger.log({
+      event: 'registration_email_sent',
+      kind: email.kind,
+      registrationId: email.registrationId,
     });
-    try {
-      await transporter.sendMail({
-        from,
-        to: email.to,
-        subject,
-        text,
-        html,
-        attachments,
-      });
-      this.logger.log({
-        event: 'registration_email_sent',
-        kind: email.kind,
-        registrationId: email.registrationId,
-      });
-    } finally {
-      transporter.close();
-    }
   }
 
   // Email delivery failures never undo an already committed registration change.

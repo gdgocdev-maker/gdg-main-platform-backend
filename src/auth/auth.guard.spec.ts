@@ -9,6 +9,8 @@ const AUTH_USER_ID = '6f1c2a4e-1b2c-4d5e-8f90-123456789abc';
 const verify = vi.fn();
 const findUnique = vi.fn();
 const findRevokedToken = vi.fn();
+const originalFrontendUrl = process.env.FRONTEND_URL;
+const originalFrontendOrigins = process.env.FRONTEND_ORIGINS;
 const guard = new AuthGuard(
   { verify } as unknown as TokenVerifierService,
   { person: { findUnique }, revokedAuthToken: { findUnique: findRevokedToken } } as unknown as PrismaService,
@@ -35,6 +37,13 @@ beforeEach(() => {
   verify.mockReset().mockResolvedValue({ authUserId: AUTH_USER_ID });
   findUnique.mockReset();
   findRevokedToken.mockReset().mockResolvedValue(null);
+});
+
+afterEach(() => {
+  if (originalFrontendUrl === undefined) delete process.env.FRONTEND_URL;
+  else process.env.FRONTEND_URL = originalFrontendUrl;
+  if (originalFrontendOrigins === undefined) delete process.env.FRONTEND_ORIGINS;
+  else process.env.FRONTEND_ORIGINS = originalFrontendOrigins;
 });
 
 describe('AuthGuard', () => {
@@ -110,9 +119,19 @@ describe('AuthGuard', () => {
   });
 
   it('requires the configured origin for cookie-authenticated mutations', async () => {
+    process.env.FRONTEND_URL = 'https://gdg-leeniverse.onrender.com';
+    process.env.FRONTEND_ORIGINS = 'http://localhost:3000';
     const { context } = requestWithCookie('gdg_access=good-token', 'https://attacker.example');
     await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
     expect(verify).not.toHaveBeenCalled();
+  });
+
+  it('allows explicitly configured local and hosted frontend origins', async () => {
+    process.env.FRONTEND_URL = 'https://gdg-leeniverse.onrender.com';
+    process.env.FRONTEND_ORIGINS = 'http://localhost:3000';
+    const { context } = requestWithCookie('gdg_refresh=refresh-token', 'http://localhost:3000');
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
   });
 
   it.each([
