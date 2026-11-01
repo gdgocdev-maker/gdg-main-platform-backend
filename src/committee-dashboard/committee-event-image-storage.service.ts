@@ -13,6 +13,21 @@ const EXTENSION_BY_TYPE: Record<string, string> = {
   'image/gif': 'gif',
 };
 
+function matchesImageSignature(buffer: Buffer, mimetype: string) {
+  switch (mimetype) {
+    case 'image/jpeg':
+      return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+    case 'image/png':
+      return buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    case 'image/webp':
+      return buffer.length >= 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP';
+    case 'image/gif':
+      return buffer.length >= 6 && ['GIF87a', 'GIF89a'].includes(buffer.toString('ascii', 0, 6));
+    default:
+      return false;
+  }
+}
+
 @Injectable()
 export class CommitteeEventImageStorageService {
   private readonly logger = new Logger(CommitteeEventImageStorageService.name);
@@ -30,7 +45,13 @@ export class CommitteeEventImageStorageService {
   }
 
   private async uploadToPath(file: { buffer: Buffer; mimetype: string; size: number }, folder?: string) {
-    if (!IMAGE_TYPES.has(file.mimetype) || file.size <= 0 || file.size > MAX_IMAGE_BYTES) {
+    if (
+      !IMAGE_TYPES.has(file.mimetype)
+      || file.size <= 0
+      || file.size > MAX_IMAGE_BYTES
+      || file.buffer.length !== file.size
+      || !matchesImageSignature(file.buffer, file.mimetype)
+    ) {
       throw new BadRequestException('Choose a JPEG, PNG, WebP, or GIF image up to 5 MB.');
     }
     const client = this.getClient();
