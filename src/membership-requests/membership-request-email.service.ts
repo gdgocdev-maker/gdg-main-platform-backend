@@ -1,6 +1,5 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import nodemailer from 'nodemailer';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { SmtpEmailService } from '../common/email/smtp-email.service.js';
 
 export type MembershipDecisionEmailKind = 'APPROVED' | 'REJECTED';
 
@@ -31,7 +30,7 @@ function escapeHtml(value: string): string {
 export class MembershipRequestEmailService {
   private readonly logger = new Logger(MembershipRequestEmailService.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(@Inject(SmtpEmailService) private readonly smtp: SmtpEmailService) {}
 
   async sendDecisionEmail(email: MembershipDecisionEmail): Promise<void> {
     if (!email.to) {
@@ -44,13 +43,17 @@ export class MembershipRequestEmailService {
       return;
     }
 
-    const host = this.config.get<string>('SMTP_HOST');
-    const port = Number(this.config.get<string>('SMTP_PORT') ?? 465);
-    const user = this.config.get<string>('SMTP_USER');
-    const pass = this.config.get<string>('SMTP_PASS')?.replace(/\s+/g, '');
-    const from = this.config.get<string>('AUTH_EMAIL_FROM');
-
-    if (!host || !Number.isInteger(port) || !user || !pass || !from) {
+    if (!this.smtp.isConfigured()) {
+      this.logger.warn({
+        event: 'membership_decision_email_skipped',
+        reason: 'SMTP_NOT_CONFIGURED',
+        decision: email.decision,
+        recipientName: email.recipientName,
+      });
+      return;
+    }
+    const from = this.smtp.getFromAddress();
+    if (!from) {
       this.logger.warn({
         event: 'membership_decision_email_skipped',
         reason: 'SMTP_NOT_CONFIGURED',
@@ -89,29 +92,12 @@ export class MembershipRequestEmailService {
     const htmlBody = escapeHtml(body).replace(/\n/g, '<br>');
     const html = `<!doctype html><html lang="ar" dir="rtl"><body style="margin:0;background:#f8f9fa;font-family:Arial,Tahoma,sans-serif;color:#202124;line-height:1.9;direction:rtl;text-align:right"><div style="max-width:600px;margin:32px auto;padding:32px;background:#fff;border:1px solid #e8eaed;border-radius:16px"><h2 style="margin-top:0;color:#1a73e8">${escapeHtml(subject)}</h2><p>${escapeHtml(greeting)}</p><p>${htmlBody}</p><p style="margin-top:28px">بكل التقدير،<br><strong>فريق google developer group on Campus – جامعة جدة</strong></p></div></body></html>`;
 
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465,
-      auth: { user, pass },
+    await this.smtp.sendMail({ from, to: email.to, subject, text, html });
+    this.logger.log({
+      event: 'membership_decision_email_sent',
+      decision: email.decision,
+      recipientName: email.recipientName,
+      targetName,
     });
-
-    try {
-      await transporter.sendMail({
-        from,
-        to: email.to,
-        subject,
-        text,
-        html,
-      });
-      this.logger.log({
-        event: 'membership_decision_email_sent',
-        decision: email.decision,
-        recipientName: email.recipientName,
-        targetName,
-      });
-    } finally {
-      transporter.close();
-    }
   }
 }

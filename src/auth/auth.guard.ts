@@ -6,6 +6,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import { getAllowedFrontendOrigins } from '../common/http/frontend-origins.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { TokenVerifierService } from './token-verifier.service.js';
 
@@ -37,8 +38,9 @@ export class AuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<AuthRequest>();
     const usesAuthCookie = request.headers.cookie?.split(';').some((item) => /^\s*gdg_(access|refresh)=/.test(item)) ?? false;
     if (usesAuthCookie && !['GET', 'HEAD', 'OPTIONS'].includes(request.method.toUpperCase())) {
-      const allowedOrigin = process.env.FRONTEND_URL ?? 'http://localhost:3000';
-      if (request.headers.origin !== allowedOrigin) throw new ForbiddenException('Invalid request origin.');
+      if (!getAllowedFrontendOrigins().includes(request.headers.origin ?? '')) {
+        throw new ForbiddenException('Invalid request origin.');
+      }
     }
     const header = request.headers.authorization;
     const cookie = request.headers.cookie?.split(';').map((item) => item.trim()).find((item) => item.startsWith('gdg_access='));

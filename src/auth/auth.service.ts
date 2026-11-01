@@ -12,7 +12,6 @@ import {
 } from '@nestjs/common';
 import { createHash, createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
-import nodemailer from 'nodemailer';
 import {
   type AuthError,
   createClient,
@@ -21,6 +20,7 @@ import {
 } from '@supabase/supabase-js';
 import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { SmtpEmailService } from '../common/email/smtp-email.service.js';
 import { approvalScopeFor, findApplicableCommittees } from '../committees/committee-catalog.js';
 import type { RequestUser } from './auth.guard.js';
 import type { CheckEmailDto } from './check-email.dto.js';
@@ -81,6 +81,7 @@ export class AuthService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(ConfigService) private readonly config: ConfigService,
+    @Inject(SmtpEmailService) private readonly smtp: SmtpEmailService,
   ) {}
 
   // supabase checks the password, we just hand back the session
@@ -469,21 +470,10 @@ export class AuthService {
   }
 
   private async sendAuthEmail(message: { from: string; to: string; subject: string; text: string }) {
-    const host = this.config.get<string>('SMTP_HOST');
-    const port = Number(this.config.get<string>('SMTP_PORT') ?? 465);
-    const user = this.config.get<string>('SMTP_USER');
-    const pass = this.config.get<string>('SMTP_PASS')?.replace(/\s+/g, '');
-    if (!host || !Number.isInteger(port) || !user || !pass) {
-      throw new ServiceUnavailableException('Email delivery is not configured.');
-    }
-    const transporter = nodemailer.createTransport({ host, port, secure: port === 465, auth: { user, pass } });
-    try {
-      await transporter.sendMail(message);
-    } catch {
-      throw new ServiceUnavailableException('Could not send verification email. Check the SMTP settings.');
-    } finally {
-      transporter.close();
-    }
+    await this.smtp.sendMail(message, {
+      unavailableMessage: 'Email delivery is not configured.',
+      sendErrorMessage: 'Could not send verification email. Check the SMTP settings.',
+    });
   }
 
   private verificationHash(personId: number | string, code: string, purpose: string) {
