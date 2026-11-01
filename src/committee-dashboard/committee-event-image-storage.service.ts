@@ -22,12 +22,21 @@ export class CommitteeEventImageStorageService {
   constructor(private readonly config: ConfigService) {}
 
   async upload(file: { buffer: Buffer; mimetype: string; size: number }) {
+    return this.uploadToPath(file);
+  }
+
+  async uploadAnnouncementImage(file: { buffer: Buffer; mimetype: string; size: number }) {
+    return this.uploadToPath(file, 'announcements');
+  }
+
+  private async uploadToPath(file: { buffer: Buffer; mimetype: string; size: number }, folder?: string) {
     if (!IMAGE_TYPES.has(file.mimetype) || file.size <= 0 || file.size > MAX_IMAGE_BYTES) {
       throw new BadRequestException('Choose a JPEG, PNG, WebP, or GIF image up to 5 MB.');
     }
     const client = this.getClient();
     await this.ensureBucket(client);
-    const objectPath = `${randomUUID()}.${EXTENSION_BY_TYPE[file.mimetype]}`;
+    const objectName = `${randomUUID()}.${EXTENSION_BY_TYPE[file.mimetype]}`;
+    const objectPath = folder ? `${folder}/${objectName}` : objectName;
     const { error } = await client.storage.from(BUCKET).upload(objectPath, file.buffer, {
       contentType: file.mimetype,
       cacheControl: '31536000',

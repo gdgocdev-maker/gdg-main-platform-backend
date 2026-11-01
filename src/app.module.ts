@@ -5,6 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { AuthModule } from './auth/auth.module.js';
+import { AnnouncementsModule } from './announcements/announcements.module.js';
 import { CommitteeDashboardModule } from './committee-dashboard/committee-dashboard.module.js';
 import { ApiValidationPipe } from './common/http/api-validation.pipe.js';
 import { HttpErrorFilter } from './common/http/http-error.filter.js';
@@ -20,6 +21,7 @@ import { RegistrationsModule } from './registrations/registrations.module.js';
     ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
+    AnnouncementsModule,
     CommitteeDashboardModule,
     RegistrationsModule,
     EventRegistrationsModule,

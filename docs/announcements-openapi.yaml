@@ -1,0 +1,290 @@
+openapi: 3.1.0
+info:
+  title: GDG Main Platform Announcements API
+  version: 1.0.0
+      description: Public published announcements and group-leadership publishing, drafts, and management.
+servers:
+  - url: /
+paths:
+  /announcements:
+    get:
+      operationId: listPublishedAnnouncements
+      summary: List published announcements
+      responses:
+        '200':
+          description: Published announcements, pinned items first and newest first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnouncementListResponse'
+    post:
+      operationId: publishAnnouncement
+      summary: Save an announcement as a draft or publish it immediately
+      description: Requires the announcements.manage permission, granted only to the group leader and co-leader roles.
+      security:
+        - bearerAuth: []
+        - accessCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAnnouncement'
+      responses:
+        '201':
+          description: Announcement stored as a draft or published immediately, based on status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnouncementResponse'
+        '400':
+          description: Invalid announcement data.
+        '401':
+          description: Authentication required.
+        '403':
+          description: Caller lacks group leadership publishing permission.
+  /announcements/manage:
+    get:
+      operationId: listAnnouncementsForManagement
+      summary: List announcements for group leadership
+      security:
+        - bearerAuth: []
+        - accessCookie: []
+      responses:
+        '200':
+          description: Published announcements and drafts, for authorized managers only.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnouncementListResponse'
+        '401':
+          description: Authentication required.
+        '403':
+          description: Caller lacks group leadership publishing permission.
+  /announcements/images:
+    post:
+      operationId: uploadAnnouncementImage
+      summary: Upload an announcement image
+      description: Requires announcements.manage. Accepts JPEG, PNG, WebP, or GIF up to 5 MB.
+      security:
+        - bearerAuth: []
+        - accessCookie: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Image uploaded to public object storage.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadedAnnouncementImageResponse'
+        '400': { description: Invalid image file. }
+        '401': { description: Authentication required. }
+        '403': { description: Caller lacks group leadership publishing permission. }
+        '502': { description: Image storage is unavailable. }
+  /announcements/{identifier}:
+    patch:
+      operationId: updateAnnouncement
+      summary: Update a published announcement
+      description: Requires the announcements.manage permission, granted only to the group leader and co-leader roles.
+      security:
+        - bearerAuth: []
+        - accessCookie: []
+      parameters:
+        - name: identifier
+          in: path
+          required: true
+          description: Database announcement ID.
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAnnouncement'
+      responses:
+        '200':
+          description: Announcement updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnouncementResponse'
+        '400': { description: Invalid announcement data. }
+        '401': { description: Authentication required. }
+        '403': { description: Caller lacks group leadership publishing permission. }
+        '404': { description: Announcement not found. }
+    delete:
+      operationId: deleteAnnouncement
+      summary: Delete a published announcement
+      description: Requires the announcements.manage permission, granted only to the group leader and co-leader roles.
+      security:
+        - bearerAuth: []
+        - accessCookie: []
+      parameters:
+        - name: identifier
+          in: path
+          required: true
+          description: Database announcement ID.
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Announcement deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletedAnnouncementResponse'
+        '401': { description: Authentication required. }
+        '403': { description: Caller lacks group leadership publishing permission. }
+        '404': { description: Announcement not found. }
+    get:
+      operationId: getPublishedAnnouncement
+      summary: Get a published announcement by slug
+      description: This GET operation receives the public slug; management operations on the same path receive the numeric database ID.
+      parameters:
+        - name: identifier
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Published announcement.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnouncementResponse'
+        '404':
+          description: Announcement not found.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+    accessCookie:
+      type: apiKey
+      in: cookie
+      name: gdg_access
+  schemas:
+    ApiSuccess:
+      type: object
+      required: [success, message, data, error]
+      properties:
+        success: { type: boolean, const: true }
+        message: { type: string }
+        error: { type: 'null' }
+    AnnouncementCategory:
+      type: string
+      enum: [events, recruitment, workshops, results, community, trip]
+    AnnouncementStatus:
+      type: string
+      enum: [DRAFT, PUBLISHED]
+    Announcement:
+      type: object
+      required: [id, slug, title, excerpt, category, media, publishedAt, updatedAt, publishedBy, pinned, publicationStatus]
+      properties:
+        id: { type: string }
+        slug: { type: string }
+        title: { type: string }
+        excerpt: { type: string }
+        category: { $ref: '#/components/schemas/AnnouncementCategory' }
+        publicationStatus: { $ref: '#/components/schemas/AnnouncementStatus' }
+        media:
+          oneOf:
+            - type: object
+              required: [type, artwork]
+              properties:
+                type: { type: string, const: artwork }
+                artwork: { type: string, enum: [navy, forest, plum, ember, ocean, pine] }
+            - type: object
+              required: [type, src, alt]
+              properties:
+                type: { type: string, const: image }
+                src: { type: string, format: uri }
+                alt: { type: string }
+        publishedAt: { type: string, format: date }
+        updatedAt: { type: string, format: date }
+        publishedBy: { type: string }
+        pinned: { type: boolean }
+        body:
+          type: array
+          items:
+            type: object
+            required: [type, text]
+            properties:
+              type: { type: string, const: paragraph }
+              text: { type: string }
+        primaryAction:
+          type: object
+          required: [label, href]
+          properties:
+            label: { type: string }
+            href: { type: string, format: uri }
+    AnnouncementListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/Announcement' }
+    AnnouncementResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/Announcement' }
+    UploadedAnnouncementImageResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [imageUrl]
+              properties:
+                imageUrl: { type: string, format: uri }
+    DeletedAnnouncementResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [id]
+              properties:
+                id: { type: string }
+    CreateAnnouncement:
+      type: object
+      additionalProperties: false
+      required: [category]
+      properties:
+        title: { type: string, maxLength: 200, description: Required before publishing. }
+        excerpt: { type: string, maxLength: 500, description: Required before publishing. }
+        category: { $ref: '#/components/schemas/AnnouncementCategory' }
+        status: { $ref: '#/components/schemas/AnnouncementStatus' }
+        body: { type: string, maxLength: 10000 }
+        imageUrl: { type: string, format: uri, maxLength: 2048 }
+        actionLabel: { type: string, minLength: 2, maxLength: 80 }
+        actionHref: { type: string, format: uri, maxLength: 2048 }
+        pinned: { type: boolean, default: false }
+    UpdateAnnouncement:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        title: { type: string, maxLength: 200 }
+        excerpt: { type: string, maxLength: 500 }
+        category: { $ref: '#/components/schemas/AnnouncementCategory' }
+        status: { $ref: '#/components/schemas/AnnouncementStatus' }
+        body: { type: string, maxLength: 10000 }
+        imageUrl: { type: [string, 'null'], format: uri, maxLength: 2048 }
+        actionLabel: { type: [string, 'null'], maxLength: 80 }
+        actionHref: { type: [string, 'null'], format: uri, maxLength: 2048 }
+        pinned: { type: boolean }

@@ -56,6 +56,20 @@ enum MembershipCommitteeDecision {
   REJECTED
 }
 
+enum AnnouncementCategory {
+  events
+  recruitment
+  workshops
+  results
+  community
+  trip
+}
+
+enum AnnouncementStatus {
+  DRAFT
+  PUBLISHED
+}
+
 model Person {
   personId        Int      @id @default(autoincrement()) @map("person_id")
   authUserId      String?  @unique @map("auth_user_id") @db.Uuid
@@ -149,6 +163,7 @@ model Member {
   resolvedBlacklistEntries RegistrationBlacklistEntry[] @relation("BlacklistResolver")
   reviewedMembershipCommittees MembershipRequestCommittee[] @relation("MembershipDecisionReviewer")
   reviewedGlobalMembershipRoles MembershipRequestGlobalRole[] @relation("GlobalRoleDecisionReviewer")
+  publishedAnnouncements Announcement[]
 
   @@map("member")
 }
@@ -297,6 +312,29 @@ model MembershipRequestGlobalRole {
   @@unique([membershipRequestId, roleCode])
   @@index([roleCode, status, membershipRequestId])
   @@map("membership_request_global_role")
+}
+
+model Announcement {
+  announcementId      Int                  @id @default(autoincrement()) @map("announcement_id")
+  slug                String               @unique @db.VarChar(255)
+  title               String               @db.VarChar(200)
+  excerpt             String               @db.VarChar(500)
+  category            AnnouncementCategory
+  status              AnnouncementStatus   @default(PUBLISHED)
+  body                String?              @db.Text
+  imageUrl            String?              @map("image_url") @db.VarChar(2048)
+  actionLabel         String?              @map("action_label") @db.VarChar(80)
+  actionHref          String?              @map("action_href") @db.VarChar(2048)
+  pinned              Boolean              @default(false)
+  publishedAt         DateTime             @default(now()) @map("published_at") @db.Timestamptz(6)
+  publishedByMemberId Int                  @map("published_by_member_id")
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  publisher Member @relation(fields: [publishedByMemberId], references: [memberId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([pinned, publishedAt])
+  @@map("announcement")
 }
 
 model NonMemberRegistration {
