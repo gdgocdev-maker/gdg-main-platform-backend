@@ -195,6 +195,8 @@ components:
         excerpt: { type: string }
         category: { $ref: '#/components/schemas/AnnouncementCategory' }
         publicationStatus: { $ref: '#/components/schemas/AnnouncementStatus' }
+        draftActionLabel: { type: [string, 'null'], description: Present only in authorized management results for incomplete drafts. }
+        draftActionHref: { type: [string, 'null'], format: uri, description: Present only in authorized management results for incomplete drafts. }
         media:
           oneOf:
             - type: object

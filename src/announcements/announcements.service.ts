@@ -185,6 +185,10 @@ export class AnnouncementsService {
       updatedAt: row.updatedAt.toISOString().slice(0, 10),
       publishedBy: row.publisher.person.fullName,
       pinned: row.pinned,
+      ...(row.status === 'DRAFT' ? {
+        draftActionLabel: row.actionLabel,
+        draftActionHref: row.actionHref,
+      } : {}),
       ...(body?.length ? { body: body.map((text) => ({ type: 'paragraph' as const, text })) } : {}),
       ...(row.actionLabel && row.actionHref
         ? { primaryAction: { label: row.actionLabel, href: row.actionHref } }
