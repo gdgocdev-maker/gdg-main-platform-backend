@@ -26,10 +26,6 @@ import {
   registrationForbidden,
   registrationNotFound,
 } from './registration-errors.js';
-import {
-  type RegistrationEmail,
-  RegistrationEmailService,
-} from './registration-email.service.js';
 
 export type ReviewDecision = 'ACCEPT' | 'REJECT';
 
@@ -38,11 +34,6 @@ const REVIEWABLE_STATUSES: RegistrationStatus[] = [
   RegistrationStatus.WAITLISTED,
 ];
 const NO_SHOW_GRACE_PERIOD_MS = 24 * 60 * 60 * 1000;
-const recipientSelect = {
-  person: {
-    select: { fullName: true, emailPersonal: true, emailUniversity: true },
-  },
-} as const;
 
 @Injectable()
 export class RegistrationReviewService {
@@ -50,8 +41,6 @@ export class RegistrationReviewService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CommitteeAccessService)
     private readonly access: CommitteeAccessService,
-    @Inject(RegistrationEmailService)
-    private readonly emails: RegistrationEmailService,
   ) {}
 
   async review(
@@ -61,7 +50,7 @@ export class RegistrationReviewService {
   ) {
     await this.assertCanReview(actorMemberId);
 
-    const { result, email } = await inEventTransaction(
+    return inEventTransaction(
       this.prisma,
       async (tx) => {
         const found = await tx.eventRegistration.findUnique({
@@ -91,7 +80,6 @@ export class RegistrationReviewService {
           updated = await tx.eventRegistration.update({
             where: { registrationId },
             data: { ...offer, reviewedByMemberId: actorMemberId },
-            include: recipientSelect,
           });
         } else {
           updated = await tx.eventRegistration.update({
@@ -101,7 +89,6 @@ export class RegistrationReviewService {
               waitlistPosition: null,
               reviewedByMemberId: actorMemberId,
             },
-            include: recipientSelect,
           });
         }
 
@@ -109,25 +96,19 @@ export class RegistrationReviewService {
           await renumberWaitlist(tx, event.eventId);
         }
 
+        await tx.registrationEmailDelivery.create({
+          data: { registrationId, kind: decision === 'ACCEPT' ? 'ACCEPTED' : 'REJECTED' },
+        });
         return {
-          result: {
-            registrationId: updated.registrationId,
-            eventId: updated.eventId,
-            status: updated.status,
-            approvedAt: updated.approvedAt,
-            confirmationDeadline: updated.confirmationDeadline,
-          },
-          email: this.emailFor(
-            decision === 'ACCEPT' ? 'ACCEPTED' : 'REJECTED',
-            updated,
-            event,
-          ),
+          registrationId: updated.registrationId,
+          eventId: updated.eventId,
+          status: updated.status,
+          approvedAt: updated.approvedAt,
+          confirmationDeadline: updated.confirmationDeadline,
         };
       },
     );
 
-    await this.emails.sendSafely(email);
-    return result;
   }
 
   // Replaces the event's waitlist with registrationIds in the given order.
@@ -187,13 +168,10 @@ export class RegistrationReviewService {
   // Gives the first waitlisted person a free seat, if there is one.
   // Returns the promoted registration id, or null when nothing changed.
   async promoteNextFromWaitlist(eventId: number): Promise<number | null> {
-    const email = await inEventTransaction(this.prisma, async (tx) => {
+    return inEventTransaction(this.prisma, async (tx) => {
       const event = await lockEvent(tx, eventId);
       return this.promoteWithin(tx, event);
     });
-    if (!email) return null;
-    await this.emails.sendSafely(email);
-    return email.registrationId;
   }
 
   // Scheduled-job entry point: expires overdue confirmations and refills
@@ -224,14 +202,11 @@ export class RegistrationReviewService {
         });
         if (count === 0) return null;
         // A missed confirmation cancels the offer, releases its seat and is not a blacklist incident.
-        return { email: await this.promoteWithin(tx, event) };
+        return { promotedId: await this.promoteWithin(tx, event) };
       });
       if (!outcome) continue;
       cancelled += 1;
-      if (outcome.email) {
-        promoted.push(outcome.email.registrationId);
-        await this.emails.sendSafely(outcome.email);
-      }
+      if (outcome.promotedId !== null) promoted.push(outcome.promotedId);
     }
     return { cancelled, promoted };
   }
@@ -296,7 +271,7 @@ export class RegistrationReviewService {
   private async promoteWithin(
     tx: Tx,
     event: LockedEvent,
-  ): Promise<RegistrationEmail | null> {
+  ): Promise<number | null> {
     const offer = seatOffer(event);
     if (!offer) return null;
     if ((await countHeldSeats(tx, event.eventId)) >= event.capacity) {
@@ -309,13 +284,13 @@ export class RegistrationReviewService {
     });
     if (!next) return null;
 
-    const promoted = await tx.eventRegistration.update({
+    await tx.eventRegistration.update({
       where: { registrationId: next.registrationId },
       data: offer,
-      include: recipientSelect,
     });
     await renumberWaitlist(tx, event.eventId);
-    return this.emailFor('PROMOTED', promoted, event);
+    await tx.registrationEmailDelivery.create({ data: { registrationId: next.registrationId, kind: 'PROMOTED' } });
+    return next.registrationId;
   }
 
   private async assertCanReview(memberId: number) {
@@ -329,29 +304,4 @@ export class RegistrationReviewService {
     }
   }
 
-  private emailFor(
-    kind: RegistrationEmail['kind'],
-    registration: {
-      registrationId: number;
-      confirmationDeadline: Date | null;
-      person: {
-        fullName: string;
-        emailPersonal: string | null;
-        emailUniversity: string | null;
-      };
-    },
-    event: LockedEvent,
-  ): RegistrationEmail {
-    return {
-      kind,
-      registrationId: registration.registrationId,
-      to:
-        registration.person.emailPersonal ??
-        registration.person.emailUniversity,
-      recipientName: registration.person.fullName,
-      eventName: event.name,
-      eventStartsAt: event.startsAt,
-      confirmationDeadline: registration.confirmationDeadline ?? undefined,
-    };
-  }
 }

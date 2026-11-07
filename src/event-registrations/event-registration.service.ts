@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { apiValidationError } from '../common/http/api-response.js';
 import {
+  AttendanceMethod,
   BlacklistReason,
   EventStatus,
   Prisma,
@@ -9,6 +10,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
   eventNotFound,
+  eventStarted,
   SEAT_HOLDING_STATUSES,
   inEventTransaction,
   lockEvent,
@@ -23,7 +25,6 @@ import {
   registrationNotFound,
 } from '../registrations/registration-errors.js';
 import { RegistrationReviewService } from '../registrations/registration-review.service.js';
-import { RegistrationEmailService } from '../registrations/registration-email.service.js';
 import { checkAnswers } from './answers.js';
 import { AttendanceTokenService } from './attendance-token.service.js';
 import type {
@@ -79,8 +80,6 @@ export class EventRegistrationService {
     private readonly tokens: AttendanceTokenService,
     @Inject(RegistrationReviewService)
     private readonly review: RegistrationReviewService,
-    @Inject(RegistrationEmailService)
-    private readonly emails: RegistrationEmailService,
   ) {}
 
   async listPublishedEvents() {
@@ -224,6 +223,7 @@ export class EventRegistrationService {
         confirmedAt: true,
         checkedInAt: true,
         attendanceTokenEncrypted: true,
+        attendanceMethod: true,
         event: {
           select: {
             eventId: true,
@@ -273,47 +273,44 @@ export class EventRegistrationService {
 
   async confirm(registrationId: number, personId: number) {
     const registration = await this.ownRegistration(registrationId, personId);
-    const now = new Date();
-    const issued = this.tokens.issue();
-
-    // Conditional update: it cannot race with the expiry job, which only
-    // touches rows whose deadline has already passed.
-    const { count } = await this.prisma.eventRegistration.updateMany({
-      where: {
-        registrationId,
-        status: RegistrationStatus.AWAITING_CONFIRMATION,
-        confirmationDeadline: { gt: now },
-      },
-      data: {
-        status: RegistrationStatus.CONFIRMED,
-        confirmedAt: now,
-        attendanceTokenHash: issued.hash,
-        attendanceTokenEncrypted: issued.encrypted,
-      },
+    const { confirmedAt, attendanceMethod, issued } = await inEventTransaction(this.prisma, async (tx) => {
+      const event = await lockEvent(tx, registration.eventId);
+      const confirmedAt = new Date();
+      if (!event.published) throw registrationClosed();
+      if (event.startsAt <= confirmedAt) throw eventStarted();
+      const member = await tx.member.findUnique({
+        where: { personId },
+        select: { isActive: true },
+      });
+      const attendanceMethod = member?.isActive ? AttendanceMethod.MEMBER_CARD : AttendanceMethod.GUEST_QR;
+      const issued = attendanceMethod === AttendanceMethod.GUEST_QR ? this.tokens.issue() : null;
+      const { count } = await tx.eventRegistration.updateMany({
+        where: {
+          registrationId,
+          status: RegistrationStatus.AWAITING_CONFIRMATION,
+          confirmationDeadline: { gt: confirmedAt },
+        },
+        data: {
+          status: RegistrationStatus.CONFIRMED,
+          confirmedAt,
+          attendanceMethod,
+          attendanceTokenHash: issued?.hash ?? null,
+          attendanceTokenEncrypted: issued?.encrypted ?? null,
+        },
+      });
+      if (count === 0) throw this.cannotRespond(registration);
+      if (issued) await tx.registrationEmailDelivery.create({ data: { registrationId, kind: 'CONFIRMED' } });
+      return { confirmedAt, attendanceMethod, issued };
     });
-    if (count === 0) throw this.cannotRespond(registration);
 
-    const attendanceQrCodeDataUrl = await AttendanceTokenService.qrImage(
-      issued.token,
-    );
-    await this.emails.sendSafely({
-      kind: 'CONFIRMED',
-      registrationId,
-      to:
-        registration.person.emailPersonal ??
-        registration.person.emailUniversity,
-      recipientName: registration.person.fullName,
-      eventName: registration.event.name,
-      eventStartsAt: registration.event.startsAt,
-      eventLocation: registration.event.location,
-      attendanceQrCodeDataUrl,
-    });
+    const attendanceQrCodeDataUrl = issued ? await AttendanceTokenService.qrImage(issued.token) : null;
 
     return {
       registrationId,
       status: RegistrationStatus.CONFIRMED,
-      confirmedAt: now,
-      attendanceToken: issued.token,
+      confirmedAt,
+      attendanceMethod,
+      ...(issued ? { attendanceToken: issued.token } : {}),
       attendanceQrCodeDataUrl,
     };
   }
@@ -396,14 +393,6 @@ export class EventRegistrationService {
         status: true,
         confirmedAt: true,
         confirmationDeadline: true,
-        person: {
-          select: {
-            fullName: true,
-            emailPersonal: true,
-            emailUniversity: true,
-          },
-        },
-        event: { select: { name: true, startsAt: true, location: true } },
       },
     });
     if (!registration) throw registrationNotFound();

@@ -696,6 +696,7 @@ export class AuthService {
         profileImageUrl: true,
         member: {
           select: {
+            membershipNumber: true,
             joinDate: true,
             committees: {
               select: {
@@ -737,6 +738,7 @@ export class AuthService {
     return {
       personId: user.personId,
       memberId: user.memberId,
+      membershipNumber: member?.membershipNumber ?? null,
       fullName: person.fullName,
       email: person.emailPersonal ?? user.email ?? null,
       universityEmail: person.emailUniversity,

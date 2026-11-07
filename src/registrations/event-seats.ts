@@ -15,6 +15,7 @@ export interface LockedEvent {
   confirmationWindowHours: number;
   startsAt: Date;
   endsAt: Date;
+  published: boolean;
 }
 
 // Only accepted people who have not dropped out hold a seat.
@@ -69,7 +70,8 @@ export async function lockEvent(tx: Tx, eventId: number): Promise<LockedEvent> {
     SELECT event_id AS "eventId", name, capacity,
            confirmation_window_hours AS "confirmationWindowHours",
            starts_at AS "startsAt",
-           ends_at AS "endsAt"
+           ends_at AS "endsAt",
+           status = 'published' AS published
     FROM events
     WHERE event_id = ${eventId}
     FOR UPDATE`;

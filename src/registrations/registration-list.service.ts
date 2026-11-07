@@ -223,6 +223,7 @@ export class RegistrationListService {
           waitlistPosition: true,
           confirmationDeadline: true,
           checkedInAt: true,
+          emailDeliveries: { orderBy: { id: 'desc' }, take: 1, select: { state: true } },
           discoverySource: true,
           person: {
             select: {
@@ -308,6 +309,7 @@ export class RegistrationListService {
         registeredAt: row.registeredAt,
         waitlistPosition: row.waitlistPosition,
         confirmationDeadline: row.confirmationDeadline,
+        emailState: row.emailDeliveries[0]?.state ?? null,
         checkedInAt: row.checkedInAt,
         discoverySource: row.discoverySource,
         answers: row.answers.map((answer) => ({

@@ -1,0 +1,91 @@
+openapi: 3.1.0
+info:
+  title: GDG event attendance and email delivery
+  version: 1.0.0
+paths:
+  /registrations/{registrationId}/confirm:
+    parameters:
+      - $ref: '#/components/parameters/RegistrationId'
+    post:
+      security: [{ accessCookie: [] }]
+      summary: Confirm the signed-in attendee's offered seat
+      responses:
+        '200':
+          description: Confirmation. A member receives MEMBER_CARD and a null QR. A guest receives GUEST_QR, a token and a PNG data URL.
+          content:
+            application/json:
+              schema:
+                properties:
+                  data:
+                    type: object
+                    required: [registrationId, status, confirmedAt, attendanceMethod, attendanceQrCodeDataUrl]
+                    properties:
+                      registrationId: { type: integer }
+                      status: { const: CONFIRMED }
+                      confirmedAt: { type: string, format: date-time }
+                      attendanceMethod: { $ref: '#/components/schemas/AttendanceMethod' }
+                      attendanceToken: { type: string }
+                      attendanceQrCodeDataUrl: { type: [string, 'null'] }
+        '403': { description: Registration belongs to another account. }
+        '409': { description: Seat is unavailable, expired, or the event has started. }
+  /events/{eventId}/check-in:
+    parameters:
+      - in: path
+        name: eventId
+        required: true
+        schema: { type: integer }
+    post:
+      security: [{ accessCookie: [] }]
+      summary: Check in with a guest QR or a verified active membership-card barcode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token]
+              properties:
+                token: { type: string, minLength: 1, maxLength: 200 }
+      responses:
+        '200': { description: Registration ID, attendee name and check-in timestamp. }
+        '400': { description: Code is invalid for this event or does not resolve to an eligible confirmed registration. }
+        '403': { description: Registration review permission required. }
+        '409': { description: Already checked in or the check-in window is closed. }
+  /registrations/{registrationId}/email/retry:
+    parameters:
+      - $ref: '#/components/parameters/RegistrationId'
+    post:
+      security: [{ accessCookie: [] }]
+      summary: Requeue the latest failed registration email without changing the decision
+      responses:
+        '202':
+          description: Email is queued for retry. Successful delivery is recorded separately.
+          content:
+            application/json:
+              schema:
+                properties:
+                  data:
+                    type: object
+                    required: [emailState]
+                    properties:
+                      emailState: { const: PENDING }
+        '403': { description: Registration review permission required. }
+        '404': { description: No tracked email for this registration. }
+        '409': { description: The latest email is not failed. }
+components:
+  parameters:
+    RegistrationId:
+      in: path
+      name: registrationId
+      required: true
+      schema: { type: integer }
+  securitySchemes:
+    accessCookie: { type: apiKey, in: cookie, name: gdg_access }
+  schemas:
+    AttendanceMethod:
+      type: string
+      enum: [MEMBER_CARD, GUEST_QR]
+    EmailState:
+      type: string
+      enum: [PENDING, SENDING, SENT, FAILED, SKIPPED]

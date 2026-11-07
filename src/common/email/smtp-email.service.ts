@@ -52,6 +52,8 @@ export class SmtpEmailService {
       host,
       port,
       secure: port === 465,
+      connectionTimeout: 15_000,
+      socketTimeout: 45_000,
       auth: { user, pass },
     };
   }

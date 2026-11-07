@@ -762,12 +762,16 @@ const NOURA = {
   major: 'Software Engineering',
   gender: 'female',
   bio: null,
+  githubUrl: null,
+  portfolioUrl: null,
+  xUrl: null,
   profileImageUrl: null,
   membershipRequest: {
     status: 'APPROVED',
     applicationData: { college: 'College of Computer Science', level: 'Third Year' },
   },
   member: {
+    membershipNumber: 100001,
     joinDate: new Date('2025-09-01T00:00:00.000Z'),
     committees: [
       {
@@ -810,6 +814,7 @@ describe('GET /me', () => {
       data: {
         personId: 6,
         memberId: 10000005,
+        membershipNumber: 100001,
         fullName: 'Noura Demo',
         email: 'noura@example.test',
         universityEmail: 'noura@university.example',
@@ -821,6 +826,7 @@ describe('GET /me', () => {
         level: 'Third Year',
         gender: 'female',
         bio: null,
+        socialLinks: { github: null, portfolio: null, x: null },
         profileImageUrl: null,
         joinDate: new Date('2025-09-01T00:00:00.000Z'),
         committees: [{ code: 'DATA', name: 'Data', position: 'Leader' }],
@@ -853,6 +859,7 @@ describe('GET /me', () => {
     expect(response.data).toEqual({
       personId: 11,
       memberId: null,
+      membershipNumber: null,
       fullName: 'Visitor',
       email: null,
       universityEmail: null,
@@ -864,6 +871,7 @@ describe('GET /me', () => {
       level: null,
       gender: null,
       bio: null,
+      socialLinks: { github: null, portfolio: null, x: null },
       profileImageUrl: null,
       joinDate: null,
       committees: [],

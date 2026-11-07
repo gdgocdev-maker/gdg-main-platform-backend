@@ -6,5 +6,5 @@ schemaTestTarget(process.env.TEST_DATABASE_URL, process.env.DATABASE_URL);
 
 export default defineConfig({
   ...base,
-  test: { ...base.test, include: ['test/database-schema.e2e-spec.ts'] },
+  test: { ...base.test, include: ['test/database-schema.e2e-spec.ts', 'test/wallet-membership.e2e-spec.ts'] },
 });

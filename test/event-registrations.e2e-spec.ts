@@ -1,12 +1,17 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { RegistrationStatus } from '../src/generated/prisma/client.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
+import { GuestWalletRelayService } from '../src/registrations/guest-wallet-relay.service.js';
+import { RegistrationEmailDeliveryService } from '../src/registrations/registration-email-delivery.service.js';
+import { RegistrationEmailService } from '../src/registrations/registration-email.service.js';
 import { RegistrationReviewService } from '../src/registrations/registration-review.service.js';
+import { WalletProjectionService } from '../src/registrations/wallet-projection.service.js';
 import { schemaTestTarget } from './schema-test-target.js';
 
 // Runs against a separate local database, never the development one:
@@ -83,7 +88,7 @@ function as(personId: number | undefined) {
 async function registerVia(eventId: number, personId: number, answers = []) {
   const response = await as(personId)
     .post(`/events/${eventId}/registrations`)
-    .send({ answers })
+    .send({ answers, discoverySource: 'GOOGLE' })
     .expect(201);
   return response.body.data.registrationId as number;
 }
@@ -123,7 +128,7 @@ beforeAll(async () => {
     data: { personId: await createPerson() },
   });
   await prisma.memberCommittee.create({
-    data: { memberId: staff.memberId, committeeId, role: 'Member' },
+    data: { memberId: staff.memberId, committeeId, role: 'Leader' },
   });
   prMemberId = staff.memberId;
   prPersonId = staff.personId;
@@ -183,13 +188,17 @@ describe('POST /events/:eventId/registrations', () => {
     const person = await createPerson();
 
     const [first, second] = await Promise.all([
-      as(person).post(`/events/${event.eventId}/registrations`).send({}),
-      as(person).post(`/events/${event.eventId}/registrations`).send({}),
+      as(person)
+        .post(`/events/${event.eventId}/registrations`)
+        .send({ discoverySource: 'GOOGLE' }),
+      as(person)
+        .post(`/events/${event.eventId}/registrations`)
+        .send({ discoverySource: 'GOOGLE' }),
     ]);
     expect([first.status, second.status].sort()).toEqual([201, 409]);
     const again = await as(person)
       .post(`/events/${event.eventId}/registrations`)
-      .send({})
+      .send({ discoverySource: 'GOOGLE' })
       .expect(409);
     expect(again.body.error.code).toBe('ALREADY_REGISTERED');
   });
@@ -210,12 +219,16 @@ describe('POST /events/:eventId/registrations', () => {
 
     const missing = await as(person)
       .post(`/events/${event.eventId}/registrations`)
-      .send({ answers: [{ questionId: topics.questionId, answer: ['AI'] }] })
+      .send({
+        discoverySource: 'GOOGLE',
+        answers: [{ questionId: topics.questionId, answer: ['AI'] }],
+      })
       .expect(400);
     expect(missing.body.error.code).toBe('VALIDATION_ERROR');
     await as(person)
       .post(`/events/${event.eventId}/registrations`)
       .send({
+        discoverySource: 'GOOGLE',
         answers: [
           { questionId: why.questionId, answer: 'Learning' },
           { questionId: topics.questionId, answer: ['Mobile'] },
@@ -226,6 +239,7 @@ describe('POST /events/:eventId/registrations', () => {
     const response = await as(person)
       .post(`/events/${event.eventId}/registrations`)
       .send({
+        discoverySource: 'GOOGLE',
         answers: [
           { questionId: why.questionId, answer: 'Learning' },
           { questionId: topics.questionId, answer: ['AI', 'Cloud'] },
@@ -246,14 +260,14 @@ describe('POST /events/:eventId/registrations', () => {
     const closed = await createEvent({ deadlineInHours: -1 });
     const response = await as(await createPerson())
       .post(`/events/${closed.eventId}/registrations`)
-      .send({})
+      .send({ discoverySource: 'GOOGLE' })
       .expect(409);
     expect(response.body.error.code).toBe('REGISTRATION_CLOSED');
 
     const open = await createEvent();
     await as(undefined)
       .post(`/events/${open.eventId}/registrations`)
-      .send({})
+      .send({ discoverySource: 'GOOGLE' })
       .expect(401);
   });
 });
@@ -437,6 +451,234 @@ describe('POST /events/:eventId/check-in', () => {
     };
   }
 
+  it('allows only the owner worker to retrieve scoped guest tickets and lease delivery for the current schedule', async () => {
+    const { event, registrationId, token } = await confirmedGuest();
+    const config = app.get(ConfigService);
+    const workerToken = randomBytes(32).toString('base64url');
+    const workerHeaders = { Authorization: `Bearer ${workerToken}` };
+    const base = '/wallet-worker/v1/guest-tickets';
+    const path = `${base}/${registrationId}`;
+    const registration = await statusOf(registrationId);
+    await prisma.person.update({
+      where: { personId: registration.personId },
+      data: { emailPersonalVerifiedAt: new Date() },
+    });
+    config.set('WALLET_GUEST_WORKER_TOKEN', workerToken);
+    config.set('WALLET_GUEST_COMMITTEES', 'PM');
+    try {
+      await as(undefined).get(path).expect(401);
+      await as(undefined).get(path).set(workerHeaders).expect(404);
+      config.set('WALLET_GUEST_COMMITTEES', 'PR');
+      const list = await as(undefined)
+        .get(`${base}?after=${registrationId - 1}`)
+        .set(workerHeaders)
+        .expect(200);
+      expect(list.body.items).toContain(registrationId);
+      const first = await as(undefined)
+        .get(path)
+        .set(workerHeaders)
+        .expect('Cache-Control', 'no-store')
+        .expect(200);
+      expect(first.body).toMatchObject({ active: true, barcode: token });
+      expect(first.body).not.toHaveProperty('email');
+      const updatedEnd = new Date(event.endsAt.getTime() + HOUR);
+      await prisma.event.update({
+        where: { eventId: event.eventId },
+        data: { endsAt: updatedEnd },
+      });
+      await as(undefined)
+        .post(`${path}/email/claim`)
+        .set(workerHeaders)
+        .send({ startsAt: first.body.startsAt, endsAt: first.body.endsAt })
+        .expect(409);
+      const currentSchedule = {
+        startsAt: first.body.startsAt,
+        endsAt: updatedEnd.toISOString(),
+      };
+      const claims = await Promise.all(
+        [0, 1].map(() =>
+          as(undefined)
+            .post(`${path}/email/claim`)
+            .set(workerHeaders)
+            .send(currentSchedule)
+            .expect(200),
+        ),
+      );
+      const leases = claims.flatMap(({ body }) =>
+        body.email ? [body.email] : [],
+      );
+      expect(leases).toHaveLength(1);
+      expect(leases[0].recipient).toMatch(/@test.local$/);
+      await as(undefined)
+        .post(`${path}/email/result`)
+        .set(workerHeaders)
+        .send({ lease: new Date().toISOString(), state: 'SENT' })
+        .expect(409);
+      await as(undefined)
+        .post(`${path}/email/result`)
+        .set(workerHeaders)
+        .send({ lease: leases[0].lease, state: 'SENT' })
+        .expect(204);
+      const next = await as(undefined)
+        .post(`${path}/email/claim`)
+        .set(workerHeaders)
+        .send(currentSchedule)
+        .expect(200);
+      expect(next.body.email).toBeNull();
+      await prisma.event.update({
+        where: { eventId: event.eventId },
+        data: { status: 'CANCELLED' },
+      });
+      const cancelled = await as(undefined)
+        .get(path)
+        .set(workerHeaders)
+        .expect(200);
+      expect(cancelled.body).toEqual({ active: false, expired: false });
+    } finally {
+      config.set('WALLET_GUEST_WORKER_TOKEN', '');
+      config.set('WALLET_GUEST_COMMITTEES', '');
+    }
+  });
+
+  it('requests a guest pass from Wallet and sends the ready link from GDG', async () => {
+    const { event, registrationId, token } = await confirmedGuest();
+    const config = app.get(ConfigService);
+    const relay = app.get(GuestWalletRelayService);
+    const emailDelivery = app.get(RegistrationEmailDeliveryService);
+    const committeeCode =
+      'WTEST_' + randomBytes(4).toString('hex').toUpperCase();
+    const committee = await prisma.committee.create({
+      data: { committeeCode, committeeName: committeeCode },
+    });
+    const registration = await statusOf(registrationId);
+    await prisma.person.update({
+      where: { personId: registration.personId },
+      data: { emailPersonalVerifiedAt: new Date() },
+    });
+    await prisma.event.update({
+      where: { eventId: event.eventId },
+      data: { committeeId: committee.committeeId },
+    });
+    const auth = randomBytes(32).toString('base64url');
+    config.set('WALLET_GUEST_RELAY_TOKEN', auth);
+    config.set('WALLET_GUEST_RELAY_ORIGIN', 'http://127.0.0.1:9870');
+    config.set('WALLET_GUEST_COMMITTEES', committeeCode);
+    let state: 'PENDING' | 'PUBLISHED' = 'PENDING';
+    let revision = 0;
+    const walletUrl = `http://127.0.0.1:9870/m/${randomBytes(32).toString('base64url')}/id.pkpass`;
+    const sendMock = vi
+      .spyOn(app.get(RegistrationEmailService), 'send')
+      .mockRejectedValueOnce(new Error('Simulated GDG SMTP failure'))
+      .mockResolvedValue(undefined);
+    const calls: Array<{ method: string; body?: Record<string, unknown> }> = [];
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async (input, init) => {
+        expect(String(input)).toBe(
+          `http://127.0.0.1:9870/integrations/v1/guest-tickets/${committeeCode}/${registrationId}`,
+        );
+        expect(new Headers(init?.headers).get('Authorization')).toBe(
+          `Bearer ${auth}`,
+        );
+        const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+        calls.push({ method: init?.method ?? 'GET', body });
+        if (body) {
+          revision = body.revision;
+          state = 'PENDING';
+        }
+        return Response.json({
+          revision,
+          deliveryId: null,
+          emailState: 'NONE',
+          walletState: state,
+          ...(state === 'PUBLISHED' ? { walletUrl } : {}),
+        });
+      });
+    try {
+      await relay.sync();
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toMatchObject({
+        method: 'PUT',
+        body: { active: true, revision: 1, barcode: token, emailByGdg: true },
+      });
+      expect(calls[0].body).not.toHaveProperty('email');
+      expect(sendMock).not.toHaveBeenCalled();
+      const firstDelivery = await prisma.registrationEmailDelivery.findFirstOrThrow({
+        where: { registrationId, kind: 'CONFIRMED' },
+      });
+      expect(
+        (
+          await prisma.walletGuestProjection.findUniqueOrThrow({
+            where: { registrationId },
+          })
+        ).pending,
+      ).toBe(false);
+      state = 'PUBLISHED';
+      await relay.sync();
+      expect(calls.at(-1)?.method).toBe('GET');
+      expect(
+        (
+          await prisma.registrationEmailDelivery.findUniqueOrThrow({
+            where: { id: firstDelivery.id },
+          })
+        ).state,
+      ).toBe('FAILED');
+      await emailDelivery.retry(registrationId, prMemberId);
+      const latestDelivery = await prisma.registrationEmailDelivery.findFirstOrThrow({
+        where: { registrationId, kind: 'CONFIRMED', state: 'PENDING' },
+      });
+      expect(latestDelivery.id).toBeGreaterThan(firstDelivery.id);
+      await relay.sync();
+      expect(calls.at(-1)?.method).toBe('GET');
+      expect(sendMock).toHaveBeenLastCalledWith(expect.objectContaining({
+        to: expect.stringMatching(/@test.local$/),
+        walletUrl,
+        attendanceQrCodeDataUrl: expect.stringMatching(/^data:image\/png;base64,/),
+      }));
+      expect(
+        (
+          await prisma.registrationEmailDelivery.findUniqueOrThrow({
+            where: { id: latestDelivery.id },
+          })
+        ).state,
+      ).toBe('SENT');
+      const endsAt = new Date(event.endsAt.getTime() + HOUR);
+      await prisma.event.update({
+        where: { eventId: event.eventId },
+        data: { endsAt },
+      });
+      await relay.sync();
+      expect(calls.at(-1)).toMatchObject({
+        method: 'PUT',
+        body: {
+          active: true,
+          revision: 2,
+          endsAt: endsAt.toISOString(),
+          emailByGdg: true,
+        },
+      });
+      await prisma.event.update({
+        where: { eventId: event.eventId },
+        data: { status: 'CANCELLED' },
+      });
+      await relay.sync();
+      expect(calls.at(-1)).toEqual({
+        method: 'PUT',
+        body: { active: false, expired: false, revision: 3 },
+      });
+      const count = calls.length;
+      await relay.sync();
+      expect(calls).toHaveLength(count);
+      expect(sendMock).toHaveBeenCalledTimes(2);
+    } finally {
+      sendMock.mockRestore();
+      fetchMock.mockRestore();
+      config.set('WALLET_GUEST_RELAY_TOKEN', '');
+      config.set('WALLET_GUEST_RELAY_ORIGIN', '');
+      config.set('WALLET_GUEST_COMMITTEES', '');
+    }
+  });
+
   it('checks in once, then answers Already Checked In', async () => {
     const { event, registrationId, token } = await confirmedGuest();
 
@@ -461,6 +703,193 @@ describe('POST /events/:eventId/check-in', () => {
       checkedIn: 1,
       notCheckedIn: 0,
     });
+  });
+
+  it('confirms a member without a workshop QR and checks two linked card codes in only once', async () => {
+    const event = await createEvent();
+    const personId = await createPerson();
+    const member = await prisma.member.create({ data: { personId } });
+    const codes = [`GDG-UJ:MEMBER:${randomUUID()}`, `gdg:${randomUUID()}`];
+    for (const token of codes) {
+      await prisma.walletMembershipLink.create({
+        data: {
+          walletPublicId: randomUUID(),
+          memberId: member.memberId,
+          barcodeAliases: {
+            create: {
+              barcodeHash: createHash('sha256').update(token).digest('hex'),
+            },
+          },
+        },
+      });
+    }
+    const registrationId = await registerVia(event.eventId, personId);
+    await review.review(registrationId, 'ACCEPT', prMemberId);
+    const confirmed = await as(personId)
+      .post(`/registrations/${registrationId}/confirm`)
+      .expect(200);
+    expect(confirmed.body.data).toMatchObject({
+      attendanceMethod: 'MEMBER_CARD',
+      attendanceQrCodeDataUrl: null,
+    });
+    expect(confirmed.body.data).not.toHaveProperty('attendanceToken');
+    expect((await statusOf(registrationId)).attendanceTokenHash).toBeNull();
+
+    const startsAt = new Date(Date.now() + 30 * 60_000);
+    await prisma.event.update({
+      where: { eventId: event.eventId },
+      data: { registrationDeadline: startsAt, startsAt },
+    });
+    const path = `/events/${event.eventId}/check-in`;
+    const results = await Promise.all(
+      codes.map((token) => asPrStaff().post(path).send({ token })),
+    );
+    expect(results.map(({ status }) => status).sort()).toEqual([200, 409]);
+    expect(results.find(({ status }) => status === 409)?.body.error.code).toBe(
+      'ALREADY_CHECKED_IN',
+    );
+  });
+
+  it('requeues only the failed email without creating a second decision or attendance QR', async () => {
+    const { registrationId } = await confirmedGuest();
+    const original = await statusOf(registrationId);
+    const delivery = await prisma.registrationEmailDelivery.findFirstOrThrow({
+      where: { registrationId, kind: 'CONFIRMED' },
+    });
+    expect(delivery.state).toBe('PENDING');
+    await prisma.registrationEmailDelivery.update({
+      where: { id: delivery.id },
+      data: { state: 'FAILED' },
+    });
+    const route = `/registrations/${registrationId}/email/retry`;
+    await as(await createPerson())
+      .post(route)
+      .expect(403);
+    const attempts = await Promise.all([
+      asPrStaff().post(route),
+      asPrStaff().post(route),
+    ]);
+    expect(attempts.map(({ status }) => status).sort()).toEqual([202, 409]);
+    expect(
+      (
+        await prisma.registrationEmailDelivery.findUniqueOrThrow({
+          where: { id: delivery.id },
+        })
+      ).state,
+    ).toBe('PENDING');
+    expect(
+      await prisma.registrationEmailDelivery.count({
+        where: { registrationId, kind: 'CONFIRMED' },
+      }),
+    ).toBe(1);
+    expect(await statusOf(registrationId)).toEqual(original);
+  });
+
+  it('projects an accepted event to opted-in Wallet links with the scoped version and clears it after cancellation', async () => {
+    const event = await createEvent();
+    const personId = await createPerson();
+    const member = await prisma.member.create({ data: { personId } });
+    const walletPublicId = randomUUID();
+    const otherId = randomUUID();
+    await prisma.walletMembershipLink.createMany({
+      data: [
+        { walletPublicId, memberId: member.memberId, syncNextEvent: true },
+        { walletPublicId: otherId, memberId: member.memberId },
+      ],
+    });
+    const registrationId = await registerVia(event.eventId, personId);
+    await review.review(registrationId, 'ACCEPT', prMemberId);
+
+    const worker = new WalletProjectionService(
+      prisma,
+      new ConfigService({
+        WALLET_PROJECTION_URL: 'http://127.0.0.1:61999',
+        WALLET_PROJECTION_TOKEN: 'synthetic-scope',
+      }),
+    );
+    const members = [
+      {
+        membership_id: walletPublicId,
+        version: 4,
+        pending: false,
+        next_event: '',
+      },
+      {
+        membership_id: otherId,
+        version: 1,
+        pending: false,
+        next_event: 'Owner only',
+      },
+    ];
+    const writes: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const fetchStub = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async (input, init) => {
+        const url = String(input);
+        if (init?.method === 'PATCH') {
+          writes.push({ url, body: JSON.parse(String(init.body)) });
+          expect(init.headers).toMatchObject({
+            Authorization: 'Bearer synthetic-scope',
+          });
+          return Response.json({}, { status: 202 });
+        }
+        return Response.json({ members, next_cursor: null });
+      });
+    try {
+      await worker.sync();
+      await worker.sync();
+      expect(writes).toHaveLength(2);
+      expect(writes[0]).toEqual(writes[1]);
+      expect(writes[0].url).toContain(walletPublicId);
+      expect(writes[0].body).toMatchObject({
+        expected_version: 4,
+        changes: {
+          next_event: {
+            event_id: String(event.eventId),
+            registration_id: String(registrationId),
+            status: 'approved',
+          },
+        },
+      });
+
+      const movedStart = new Date(Date.now() + 12 * HOUR);
+      const movedEnd = new Date(movedStart.getTime() + HOUR);
+      await asPrStaff()
+        .patch(`/committees/PR/events/${event.eventId}`)
+        .send({
+          startsAt: movedStart.toISOString(),
+          endsAt: movedEnd.toISOString(),
+          registrationDeadline: movedStart.toISOString(),
+        })
+        .expect(200);
+      expect((await statusOf(registrationId)).confirmationDeadline).toEqual(
+        movedStart,
+      );
+      members[0].version = 5;
+      members[0].next_event = 'Old date (KSA)';
+      await worker.sync();
+      expect(writes.at(-1)?.body).toMatchObject({
+        expected_version: 5,
+        changes: {
+          next_event: {
+            starts_at: movedStart.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+          },
+        },
+      });
+
+      await as(personId)
+        .post(`/registrations/${registrationId}/decline`)
+        .expect(200);
+      members[0].version = 6;
+      members[0].next_event = 'Last event (KSA)';
+      await worker.sync();
+      expect(writes.at(-1)?.body).toMatchObject({
+        expected_version: 6,
+        changes: { next_event: null },
+      });
+    } finally {
+      fetchStub.mockRestore();
+    }
   });
 
   it('answers Invalid QR Code for an unknown token or another event', async () => {

@@ -37,6 +37,22 @@ Do not silently choose one source when sources conflict. First identify the conf
 
 Each new decision should record: date, owner/approver, status, context, decision, affected repositories, source links, and migration or rollback implications. Link the exact Notion task for task-scoped work.
 
+## 2026-11-06 Public membership number and owner-controlled Wallet links
+
+- The project user approved a fixed numeric membership number issued by the platform and shared by the ID and Profile passes for the same member. PostgreSQL assigns it from 100001 to existing and new members. The current internal `memberId` remains the key for existing platform APIs. Sequence values may have gaps.
+- A link references an existing owner-verified Wallet record for a pass pair. One person may have links for multiple committees. A committee-scoped link requires an existing membership in that committee. Group-wide links use a null committee and are excluded from committee routes. The owner verifies each match before it is entered. Barcode aliases retain only the lowercase SHA-256 digest of the exact existing payload.
+- [The phase-one API](wallet-membership-openapi.yaml) returns the number and link status to active Leaders and Co-Leaders in the specified committee. There is no platform mutation endpoint for link provisioning or pass issuance. The owner retains pass files, download URLs, signing, and issuance. Actual owner-approved mappings and presentation of the number on passes are later integration steps.
+- The backend migration adds data without renumbering existing internal IDs. An application rollback can retain the additive schema. Do not drop or reset issued membership numbers when rolling back the application.
+
+## 2026-11-06 Event attendance and Wallet projection
+
+- The project user approved keeping the existing seat-confirmation step. New member confirmations use the member's existing card barcode. Guests receive a per-registration QR. Existing confirmed registrations keep their existing QR and have a null attendance method.
+- PR registration staff may requeue the latest failed email. The decision and barcode are retained. Registration email intents are committed with their decisions and no recipient addresses or raw QR payloads are duplicated in the delivery table.
+- A published event's schedule can be edited by its authorized committee staff. A new start must be set before the event starts. Outstanding offer deadlines are capped at the new start. Updates take the same event lock as confirmations and check-ins.
+- Wallet projections use the owner-issued field and committee grants on the existing integration API. Both connection variables are required. Each verified link has independent opt-in flags for Next Event and points, defaulting to false. Enabling a flag delegates that field to the platform for that link. Leave it off for manually managed fields. A queued update is reconciled on a later poll after the owner's worker finishes it.
+- Production requires verified card mappings, scoped credentials and activation of the guest relay. For confirmed guests, Wallet publishes the temporary pass and GDG emails its link and attendance QR using its existing mail service. GDG retains the recipient address and tracks delivery.
+- The signing worker runs as a private process in the owner's existing CranL app. It uses durable private storage and scoped publication credentials. The GDG backend uses separate credentials for approved member updates and guest requests.
+
 ## Legacy-source clarification
 
 Web Doc Final describes some Next.js full-stack capabilities, including Server Actions. For this platform's backend responsibilities, that guidance is superseded by the approved separate-repository architecture: Next.js is frontend only and NestJS is authoritative.
@@ -288,3 +304,11 @@ Web Doc Final describes some Next.js full-stack capabilities, including Server A
 - Decision: the blacklist has exactly two incident reasons: a confirmed attendee without a check-in after the event ends, and a confirmed attendee who cancels within two hours before event start. An accepted attendee who misses the confirmation deadline is cancelled, receives no blacklist incident, releases the seat, and allows the next waitlisted person to be promoted.
 - Scope: the confirmation deadline and expiry behavior remain in place; only its blacklist incident is removed. The existing late-cancellation and no-check-in rules remain unchanged.
 - Migration: remove legacy CONFIRMATION_EXPIRED blacklist rows and narrow the database enum. Do not apply the migration to any database as part of this change.
+
+### Wallet data ownership and outbound guest relay
+
+GDG owns member records, committee assignments, the original points ledger, and workshop registration decisions. The Wallet backend keeps scoped change requests, the applied card values, signed passes, and delivery evidence. The Wallet service receives requests over HTTPS and does not connect to the GDG database. The GDG points ledger remains the source of truth for the absolute total projected per committee.
+
+Use the stable numeric membership number and the exact committee to find the GDG record. Store a separate explicit link to the existing Wallet ID and Profile pair. The numeric number is an identifier. API credentials and server-side authorization enforce permissions. A person can have one stable number and multiple scoped Wallet links. Existing members and points are preserved when a link is saved.
+
+The GDG backend can submit a confirmed guest's issuance or schedule change to the owner's relay, using a dedicated credential and an allowlist. The signer processes the request from the Wallet backend and can continue after the GDG server disconnects. The registration's authoritative decision remains in GDG. See [outbound guest relay API](wallet-guest-relay-openapi.yaml).

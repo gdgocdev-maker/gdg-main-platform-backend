@@ -1,0 +1,162 @@
+openapi: 3.1.0
+info:
+  title: Wallet guest request relay
+  version: 1.0.0
+  description: >
+    The GDG backend requests a temporary pass after the guest confirms.
+    Wallet signs it and returns the guest-only link when ready. GDG sends
+    the email from its own account and keeps the guest's email address.
+servers:
+  - url: https://gdg-wallet-pilot-ta78p5.cranl.net
+    description: Owner's CranL Wallet backend. The guest relay must be enabled for the granted committee.
+paths:
+  /integrations/v1/guest-tickets/{committee}/{ticketId}:
+    parameters:
+      - name: committee
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: '^[A-Z0-9_]{1,20}$'
+      - name: ticketId
+        in: path
+        required: true
+        description: The registration ID in the enrolled GDG instance.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+    put:
+      operationId: submitGuestWalletRequest
+      summary: Submit a newer issuance, reschedule, or withdrawal request
+      description: >
+        For GDG email, set emailByGdg to true and omit the email field.
+        Reuse the same ticketId and increase revision when the workshop schedule
+        changes or the registration is withdrawn. Resend the same body on a
+        retry for the same revision.
+      security:
+        - guestRelayToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/ApprovedGuest'
+                - $ref: '#/components/schemas/WithdrawnGuest'
+            example:
+              active: true
+              revision: 1
+              name: Test Guest
+              title: Test Workshop
+              startsAt: '2099-06-01T18:00:00+03:00'
+              endsAt: '2099-06-01T20:00:00+03:00'
+              barcode: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+              emailByGdg: true
+      responses:
+        '200':
+          $ref: '#/components/responses/GuestStatus'
+        '401':
+          description: Invalid relay credential.
+        '404':
+          description: Relay disabled or committee not granted.
+        '409':
+          description: The same revision was previously submitted with different contents.
+        '422':
+          description: Invalid request, such as an invalid event schedule or including a recipient in GDG email mode.
+    get:
+      operationId: readGuestWalletStatus
+      summary: Read issuance status and the installation URL when the guest pass is ready
+      description: >
+        Poll from the GDG backend. Send the confirmation email once the
+        expected revision has walletState PUBLISHED and a walletUrl on the
+        configured Wallet public origin. GDG tracks email delivery in its own
+        database. The legacy emailState field does not report GDG SMTP delivery.
+      security:
+        - guestRelayToken: []
+      responses:
+        '200':
+          $ref: '#/components/responses/GuestStatus'
+        '401':
+          description: Invalid relay credential.
+        '404':
+          description: Relay disabled, ticket unknown, or committee not granted.
+        '422':
+          description: Invalid ticket ID.
+components:
+  securitySchemes:
+    guestRelayToken:
+      type: http
+      scheme: bearer
+      description: Separate, owner-issued guest credential scoped to approved committees. Send in the Authorization header from the GDG backend only.
+  responses:
+    GuestStatus:
+      description: Accepted version and processing status. Only a published, active guest ticket can return its own temporary installation URL. Email state is retained for legacy clients.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [revision, deliveryId, emailState, walletState]
+            properties:
+              revision: { type: integer, minimum: 1 }
+              deliveryId: { type: [integer, 'null'] }
+              emailState:
+                { enum: [NONE, PENDING, SENDING, SENT, FAILED, SKIPPED] }
+              walletState: { enum: [PENDING, PUBLISHED, WITHDRAWN, EXPIRED] }
+              walletUrl:
+                type: string
+                format: uri
+                description: Temporary guest-only download capability. Use it as the Add to Apple Wallet link in the intended recipient's confirmation email. Keep it out of admin responses and logs.
+          examples:
+            queued:
+              value: { revision: 1, deliveryId: null, emailState: NONE, walletState: PENDING }
+            published:
+              value:
+                revision: 1
+                deliveryId: null
+                emailState: NONE
+                walletState: PUBLISHED
+                walletUrl: 'https://wallet.example/m/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/id.pkpass'
+  schemas:
+    ApprovedGuest:
+      type: object
+      additionalProperties: false
+      required: [active, revision, name, title, startsAt, endsAt, barcode]
+      if:
+        required: [emailByGdg]
+        properties:
+          emailByGdg: { const: true }
+      then:
+        properties:
+          email: { type: 'null' }
+      properties:
+        active: { const: true }
+        revision: { type: integer, minimum: 1 }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        title: { type: string, minLength: 1, maxLength: 160 }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        barcode: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+        emailByGdg:
+          type: boolean
+          default: false
+          description: Set to true when GDG sends the confirmation, and omit the email field.
+        email:
+          deprecated: true
+          description: Legacy owner-side email only. GDG email integrations omit this field.
+          oneOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [deliveryId, recipient]
+              properties:
+                deliveryId: { type: integer, minimum: 1 }
+                recipient: { type: string, format: email, maxLength: 254 }
+    WithdrawnGuest:
+      type: object
+      additionalProperties: false
+      required: [active, revision]
+      properties:
+        active: { const: false }
+        revision: { type: integer, minimum: 1 }
+        expired: { type: boolean, default: false }

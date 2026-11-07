@@ -187,6 +187,15 @@ export class CommitteeDashboardController {
     return apiSuccess(await this.dashboard.deleteTask(request.user, committeeCode, taskId));
   }
 
+  @Get('members/:memberId/wallet-link')
+  async getWalletLink(
+    @Req() request: { user?: RequestUser },
+    @Param('committeeCode') committeeCode: string,
+    @Param('memberId', ParseIntPipe) memberId: number,
+  ) {
+    return apiSuccess(await this.dashboard.getWalletLink(request.user, committeeCode, memberId));
+  }
+
   @Post('members/:memberId/points')
   async updatePoints(
     @Req() request: { user?: RequestUser },

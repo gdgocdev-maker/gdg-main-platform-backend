@@ -40,7 +40,7 @@ async function createMember(committeeId?: number) {
   personOfMember.set(member.memberId, person.personId);
   if (committeeId) {
     await prisma.memberCommittee.create({
-      data: { memberId: member.memberId, committeeId, role: 'Member' },
+      data: { memberId: member.memberId, committeeId, role: 'Leader' },
     });
   }
   return member.memberId;

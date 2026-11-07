@@ -1,0 +1,66 @@
+openapi: 3.1.0
+info:
+  title: GDG Wallet membership link
+  version: 1.0.0
+paths:
+  /committees/{committeeCode}/members/{memberId}/wallet-link:
+    get:
+      operationId: getCommitteeMemberWalletLink
+      summary: Read a member's Wallet link status in one committee
+      description: Requires an active Leader or Co-Leader position in the requested committee. Only reports links scoped to that committee.
+      security:
+        - accessCookie: []
+        - accessToken: []
+      parameters:
+        - name: committeeCode
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: memberId
+          in: path
+          required: true
+          description: Existing internal member ID used by committee routes.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Public membership number and whether there is a verified, non-revoked link in this committee.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [success, message, data, error]
+                properties:
+                  success:
+                    const: true
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    additionalProperties: false
+                    required: [membershipNumber, walletLinked]
+                    properties:
+                      membershipNumber:
+                        type: integer
+                        minimum: 100001
+                      walletLinked:
+                        type: boolean
+                  error:
+                    type: 'null'
+        '400':
+          description: Invalid member ID.
+        '403':
+          description: An active leader position in the requested committee is required.
+        '404':
+          description: Committee or active committee member not found.
+components:
+  securitySchemes:
+    accessCookie:
+      type: apiKey
+      in: cookie
+      name: gdg_access
+    accessToken:
+      type: http
+      scheme: bearer

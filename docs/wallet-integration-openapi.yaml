@@ -1,0 +1,172 @@
+openapi: 3.1.0
+info:
+  title: GDG Wallet member updates
+  version: 1.0.0
+  description: >
+    Backend-to-backend updates to existing, owner-linked Wallet passes.
+    The Wallet service signs and publishes approved updates. The integration
+    exposes neither pass downloads nor signing or card-issuance operations.
+    The base URL is public information. Authorization is sent separately by
+    the GDG backend. Keep the credential in server-only settings and out of
+    browser requests, logs, source control and query strings.
+servers:
+  - url: https://gdg-wallet-pilot-ta78p5.cranl.net
+    description: Owner's CranL Wallet backend
+security:
+  - projectionToken: []
+paths:
+  /integrations/v1/members:
+    get:
+      operationId: listWalletMemberships
+      summary: List active Wallet memberships in the credential's committee scope
+      parameters:
+        - name: after
+          in: query
+          description: Copy next_cursor from the preceding response. Omit for the first page.
+          schema: { type: string }
+      responses:
+        '200':
+          description: Up to 200 memberships and the next cursor, or null at the end.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [members, next_cursor]
+                properties:
+                  members:
+                    type: array
+                    items: { $ref: '#/components/schemas/Membership' }
+                  next_cursor: { type: [string, 'null'] }
+        '401': { description: The bearer credential is missing, invalid, expired, or revoked. }
+        '404': { description: The integration is disabled. }
+  /integrations/v1/members/{identifier}:
+    patch:
+      operationId: queueWalletMembershipUpdate
+      summary: Queue an update to one linked Wallet membership
+      description: >
+        Send absolute totals, not increments. Read the current version first.
+        If the response is lost, retry the same request_id with the identical body.
+        A new request needs a new request_id. An accepted update is asynchronous.
+      parameters:
+        - name: identifier
+          in: path
+          required: true
+          description: The Wallet membership_id from the list response, not the GDG membership number.
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [request_id, expected_version, changes]
+              properties:
+                request_id: { type: string, format: uuid }
+                expected_version: { type: integer, minimum: 1 }
+                changes: { $ref: '#/components/schemas/Changes' }
+            example:
+              request_id: 'b0aa147c-51f4-4a14-b37a-ae0460880c20'
+              expected_version: 4
+              changes: { points: 113 }
+      responses:
+        '202': { $ref: '#/components/responses/UpdateStatus' }
+        '401': { description: The bearer credential is missing, invalid, expired, or revoked. }
+        '403': { description: A requested field is outside the credential's permissions. }
+        '404': { description: The membership is unknown, inactive, or outside scope, or the integration is disabled. }
+        '409': { description: Stale version, another update is pending, or the request ID was reused with different content. }
+        '422': { description: Invalid request or the supplied event has already ended. }
+        '429':
+          description: Rate limit reached. Retry after the indicated delay.
+          headers:
+            Retry-After:
+              description: Wait time in seconds.
+              schema: { type: integer }
+  /integrations/v1/updates/{identifier}:
+    get:
+      operationId: getWalletMembershipUpdate
+      summary: Read the status of an update submitted by the same credential
+      parameters:
+        - name: identifier
+          in: path
+          required: true
+          description: The update_id from the PATCH response.
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { $ref: '#/components/responses/UpdateStatus' }
+        '401': { description: The bearer credential is missing, invalid, expired, or revoked. }
+        '404': { description: The update is unknown or outside scope, or the integration is disabled. }
+        '422': { description: The update identifier is not a valid UUID. }
+components:
+  securitySchemes:
+    projectionToken:
+      type: http
+      scheme: bearer
+      description: Owner-issued credential with explicit committee and field scopes. Send as Authorization Bearer from the GDG backend. A membership UUID identifies the linked pair and grants no access by itself.
+  responses:
+    UpdateStatus:
+      description: The update's current state. Published confirms publication on the Wallet server.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Update' }
+  schemas:
+    Membership:
+      type: object
+      additionalProperties: false
+      required: [membership_id, member_code, committee, version, pending]
+      properties:
+        membership_id: { type: string, format: uuid }
+        member_code:
+          type: string
+          description: The Wallet-side member code. It may differ from the GDG membership number.
+        committee: { type: string }
+        version: { type: integer, minimum: 1 }
+        pending: { type: boolean }
+        points: { type: integer, minimum: 0, maximum: 10000000 }
+        events_attended: { type: integer, minimum: 0, maximum: 100000 }
+        next_event:
+          type: string
+          description: Formatted event label or an empty string. Present only if the credential grants this field.
+    Changes:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        points:
+          type: integer
+          minimum: 0
+          maximum: 10000000
+          description: The absolute points total for the linked membership.
+        events_attended:
+          type: integer
+          minimum: 0
+          maximum: 100000
+          description: Supported by the API when granted. The current GDG projection does not send this field.
+        next_event:
+          description: Send an approved upcoming event or null to clear the field. Omit to leave it as is.
+          oneOf:
+            - $ref: '#/components/schemas/ApprovedEvent'
+            - type: 'null'
+    ApprovedEvent:
+      type: object
+      additionalProperties: false
+      required: [event_id, registration_id, status, title, starts_at, ends_at]
+      properties:
+        event_id: { type: string, minLength: 1, maxLength: 80, pattern: '^[A-Za-z0-9_-]+$' }
+        registration_id: { type: string, minLength: 1, maxLength: 80, pattern: '^[A-Za-z0-9_-]+$' }
+        status: { const: approved }
+        title: { type: string, minLength: 1, maxLength: 100 }
+        starts_at: { type: string, format: date-time, pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2})$' }
+        ends_at:
+          type: string
+          format: date-time
+          pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2})$'
+          description: Must be after the start and still in the future when the update is queued.
+    Update:
+      type: object
+      additionalProperties: false
+      required: [update_id, request_id, status]
+      properties:
+        update_id: { type: string, format: uuid }
+        request_id: { type: string, format: uuid }
+        status: { enum: [queued, processing, published, conflict, cancelled, failed] }

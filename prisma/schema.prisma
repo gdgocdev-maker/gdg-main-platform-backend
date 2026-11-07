@@ -31,6 +31,26 @@ enum EventStatus {
   CANCELLED @map("cancelled")
 }
 
+enum AttendanceMethod {
+  MEMBER_CARD
+  GUEST_QR
+}
+
+enum RegistrationEmailKind {
+  ACCEPTED
+  REJECTED
+  PROMOTED
+  CONFIRMED
+}
+
+enum RegistrationEmailState {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
 enum QuestionType {
   TEXT     @map("text")
   SELECT   @map("select")
@@ -143,6 +163,7 @@ model RolePermission {
 
 model Member {
   memberId   Int       @id @default(autoincrement()) @map("member_id")
+  membershipNumber Int @unique @default(autoincrement()) @map("membership_number")
   personId   Int       @unique @map("person_id")
   memberType String    @default("current") @map("member_type") @db.Text
   joinDate   DateTime? @map("join_date") @db.Date
@@ -155,6 +176,7 @@ model Member {
   assignedRoles            MemberRole[]                 @relation("MemberRoleAssigner")
   skills                   MemberSkill[]
   committees               MemberCommittee[]
+  walletLinks              WalletMembershipLink[]
   createdEvents            Event[]                      @relation("EventCreator")
   reviewedRegistrations    EventRegistration[]          @relation("RegistrationReviewer")
   checkedInRegistrations   EventRegistration[]          @relation("RegistrationCheckInStaff")
@@ -256,10 +278,40 @@ model MemberCommittee {
   committee Committee @relation(fields: [committeeId], references: [committeeId], onDelete: Restrict, onUpdate: NoAction)
   pointsReceived CommitteePointEntry[] @relation("PointsRecipient")
   pointsAwarded  CommitteePointEntry[] @relation("PointsAwarder")
+  walletLinks    WalletMembershipLink[]
 
   @@unique([memberId, committeeId])
   @@index([committeeId])
   @@map("member_committee")
+}
+
+model WalletMembershipLink {
+  // The existing Wallet record identifies the ID and Profile pair.
+  walletPublicId String    @id @map("wallet_public_id") @db.Uuid
+  memberId       Int       @map("member_id")
+  committeeId    Int?      @map("committee_id")
+  verifiedAt     DateTime  @default(now()) @map("verified_at") @db.Timestamptz(6)
+  revokedAt      DateTime? @map("revoked_at") @db.Timestamptz(6)
+  syncNextEvent  Boolean   @default(false) @map("sync_next_event")
+  syncPoints     Boolean   @default(false) @map("sync_points")
+
+  member          Member           @relation(fields: [memberId], references: [memberId], onDelete: Restrict, onUpdate: NoAction)
+  memberCommittee MemberCommittee? @relation(fields: [memberId, committeeId], references: [memberId, committeeId], onDelete: Restrict, onUpdate: NoAction)
+  barcodeAliases  WalletBarcodeAlias[]
+
+  @@index([memberId, committeeId])
+  @@map("wallet_membership_link")
+}
+
+model WalletBarcodeAlias {
+  barcodeHash    String    @id @map("barcode_hash") @db.VarChar(64)
+  walletPublicId String    @map("wallet_public_id") @db.Uuid
+  revokedAt      DateTime? @map("revoked_at") @db.Timestamptz(6)
+
+  link WalletMembershipLink @relation(fields: [walletPublicId], references: [walletPublicId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([walletPublicId])
+  @@map("wallet_barcode_alias")
 }
 
 model MembershipRequest {
@@ -549,6 +601,7 @@ model EventRegistration {
   excusedAt                DateTime?          @map("excused_at") @db.Timestamptz(3)
   excusedByMemberId        Int?               @map("excused_by_member_id")
   excuseReason             String?            @map("excuse_reason") @db.Text
+  attendanceMethod         AttendanceMethod?  @map("attendance_method")
   attendanceTokenHash      String?            @unique @map("attendance_token_hash") @db.Text
   attendanceTokenEncrypted String?            @map("attendance_token_encrypted") @db.Text
   checkedInAt              DateTime?          @map("checked_in_at") @db.Timestamptz(3)
@@ -562,6 +615,8 @@ model EventRegistration {
   excuseStaff      Member?                      @relation("RegistrationExcuseStaff", fields: [excusedByMemberId], references: [memberId], onDelete: Restrict, onUpdate: NoAction)
   answers          RegistrationAnswer[]
   blacklistEntries RegistrationBlacklistEntry[]
+  emailDeliveries  RegistrationEmailDelivery[]
+  walletProjection WalletGuestProjection?
 
   @@unique([eventId, personId])
   @@unique([registrationId, eventId])
@@ -573,6 +628,33 @@ model EventRegistration {
   @@index([checkedInByMemberId])
   @@index([excusedByMemberId])
   @@map("event_registrations")
+}
+
+model WalletGuestProjection {
+  registrationId Int     @id @map("registration_id")
+  revision       Int
+  fingerprint    String  @db.VarChar(64)
+  active         Boolean
+  pending        Boolean
+
+  registration EventRegistration @relation(fields: [registrationId], references: [registrationId], onDelete: Cascade)
+
+  @@index([active, pending])
+  @@map("wallet_guest_projection")
+}
+
+model RegistrationEmailDelivery {
+  id             Int                    @id @default(autoincrement())
+  registrationId Int                   @map("registration_id")
+  kind           RegistrationEmailKind
+  state          RegistrationEmailState @default(PENDING)
+  leaseExpiresAt DateTime?              @map("lease_expires_at") @db.Timestamptz(3)
+
+  registration EventRegistration @relation(fields: [registrationId], references: [registrationId], onDelete: Cascade)
+
+  @@index([registrationId, id])
+  @@index([state, id])
+  @@map("registration_email_delivery")
 }
 
 model RegistrationAnswer {

@@ -74,7 +74,9 @@ paths:
       description: >-
         Updates supplied event details for an event owned by the selected committee.
         The authenticated active committee member must have events.create permission. PR and Data Analysis Leaders and Co-Leaders receive this permission for their own committee.
-        For published events only registrationDeadline may be changed. Draft events may have their name,
+        For published events only the schedule (startsAt, endsAt, registrationDeadline) may be changed.
+        The start can be changed only before the event starts. Pending offers are capped at the new start.
+        A published event that has ended cannot be rescheduled. Draft events may have their name,
         description, type, schedule, location, capacity, maps link, speakers, requirements, image URL,
         and registration questions changed.
         Event publication status, registration questions, and immutable event ownership are unchanged.

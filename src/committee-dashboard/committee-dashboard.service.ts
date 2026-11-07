@@ -228,6 +228,7 @@ export class CommitteeDashboardService {
         ])
       : [true, false, false, false, false, false];
     if (!canViewDashboard) throw new ForbiddenException();
+    const canViewWalletLinks = membership.role === 'Leader' || membership.role === 'Co-Leader';
     const now = new Date();
     const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
     const monthStart = riyadhPeriodStart(now, 'month');
@@ -236,7 +237,12 @@ export class CommitteeDashboardService {
     const [memberships, events, tasks, pointEntries, pointTotals, registrationGroups, checkInGroups, totalPoints, pointsThisMonth, tasksDueThisWeek]: any[] = await Promise.all([
       this.prisma.memberCommittee.findMany({
         where: { committeeId: committee.committeeId, member: { isActive: true, person: { isActive: true } } },
-        include: { member: { include: { person: true } } },
+        include: {
+          member: { include: { person: true } },
+          ...(canViewWalletLinks ? {
+            walletLinks: { where: { revokedAt: null }, take: 1, select: { verifiedAt: true } },
+          } : {}),
+        },
         orderBy: [{ role: 'asc' }, { member: { person: { fullName: 'asc' } } }],
       }),
       this.prisma.event.findMany({
@@ -297,7 +303,9 @@ export class CommitteeDashboardService {
       }
     }
     const activeMemberships = (memberships as any[]).filter(({ member }: { member: any }) => member.isActive);
-    const members = activeMemberships.map(({ member, role }: { member: any; role: string }) => ({
+    const members = activeMemberships.map(({ member, role, walletLinks }: {
+      member: any; role: string; walletLinks?: { verifiedAt: Date }[];
+    }) => ({
       id: String(member.memberId),
       name: member.person.fullName,
       email: member.person.emailUniversity ?? member.person.emailPersonal ?? '',
@@ -306,6 +314,9 @@ export class CommitteeDashboardService {
       points: memberPoints.get(member.memberId) ?? 0,
       tasksCompleted: memberCompletedTasks.get(member.memberId) ?? 0,
       lastActivity: null,
+      ...(canViewWalletLinks && member.person.isActive && typeof member.membershipNumber === 'number' ? {
+        wallet: { membershipNumber: member.membershipNumber, linked: Boolean(walletLinks?.length) },
+      } : {}),
     }));
     const mappedTasks = (tasks as any[]).map((task: any) => ({
       id: String(task.taskId),
@@ -553,9 +564,6 @@ export class CommitteeDashboardService {
     const existing = await this.prisma.event.findFirst({
       where: { eventId, committeeId: committee.committeeId },
       select: {
-        startsAt: true,
-        endsAt: true,
-        registrationDeadline: true,
         questions: {
           orderBy: { position: 'asc' },
           select: { questionText: true, questionType: true, isRequired: true, position: true, options: true },
@@ -590,28 +598,41 @@ export class CommitteeDashboardService {
       })
     );
 
-    const startsAt = dto.startsAt === undefined ? existing.startsAt : new Date(dto.startsAt);
-    const endsAt = dto.endsAt === undefined ? existing.endsAt : new Date(dto.endsAt);
-    const registrationDeadline = dto.registrationDeadline === undefined
-      ? existing.registrationDeadline
-      : new Date(dto.registrationDeadline);
-    const errors: ApiErrorDetail[] = [];
-    if (endsAt.getTime() <= startsAt.getTime()) errors.push({ pointer: '/endsAt', message: 'The event must end after it starts.' });
-    if (registrationDeadline.getTime() > startsAt.getTime()) errors.push({ pointer: '/registrationDeadline', message: 'Registration must close before the event starts.' });
-    if (errors.length) throw apiValidationError(errors);
-
     const event = await this.prisma.$transaction(async (transaction) => {
-      const locked = await transaction.$queryRaw<Array<{ eventId: number; status: EventStatus }>>`
-        SELECT event_id AS "eventId", status
+      const [locked] = await transaction.$queryRaw<Array<{
+        published: boolean; draft: boolean; startsAt: Date; endsAt: Date; registrationDeadline: Date;
+      }>>`
+        SELECT status = 'published' AS published, status = 'draft' AS draft,
+               starts_at AS "startsAt", ends_at AS "endsAt", registration_deadline AS "registrationDeadline"
         FROM events
         WHERE event_id = ${eventId} AND committee_id = ${committee.committeeId}
         FOR UPDATE
       `;
-      if (!locked.length) throw new NotFoundException();
-      if (locked[0].status === EventStatus.PUBLISHED) {
-        const attemptedFields = Object.keys(dto).filter((field) => field !== 'registrationDeadline');
-        if (attemptedFields.length > 0) {
-          throw new BadRequestException('Only the registration deadline can be changed after an event is published.');
+      if (!locked) throw new NotFoundException();
+      if (!locked.published && !locked.draft) throw new ConflictException('This event is closed for editing.');
+      const startsAt = dto.startsAt === undefined ? locked.startsAt : new Date(dto.startsAt);
+      const endsAt = dto.endsAt === undefined ? locked.endsAt : new Date(dto.endsAt);
+      const registrationDeadline = dto.registrationDeadline === undefined
+        ? locked.registrationDeadline : new Date(dto.registrationDeadline);
+      const errors: ApiErrorDetail[] = [];
+      if (endsAt <= startsAt) errors.push({ pointer: '/endsAt', message: 'The event must end after it starts.' });
+      if (registrationDeadline > startsAt) errors.push({ pointer: '/registrationDeadline', message: 'Registration must close before the event starts.' });
+      if (errors.length) throw apiValidationError(errors);
+      if (locked.published) {
+        const now = new Date();
+        if (locked.endsAt <= now || endsAt <= now) throw new ConflictException('An ended event cannot be rescheduled.');
+        const scheduleFields = ['startsAt', 'endsAt', 'registrationDeadline'];
+        if (Object.entries(dto).some(([field, value]) => value !== undefined && !scheduleFields.includes(field))) {
+          throw new BadRequestException('Only the schedule can be changed after an event is published.');
+        }
+        if (startsAt.getTime() !== locked.startsAt.getTime()) {
+          if (locked.startsAt <= now || startsAt <= now) {
+            throw new ConflictException('A new start time must be set before the event starts.');
+          }
+          await transaction.eventRegistration.updateMany({
+            where: { eventId, status: 'AWAITING_CONFIRMATION', confirmationDeadline: { gt: startsAt } },
+            data: { confirmationDeadline: startsAt },
+          });
         }
       }
       if (questionsChanged) {
@@ -1026,6 +1047,33 @@ export class CommitteeDashboardService {
     const result = await this.prisma.committeeTask.deleteMany({ where: { taskId, committeeId: committee.committeeId, taskScope: 'COMMITTEE' } });
     if (!result.count) throw new NotFoundException();
     return { deleted: true };
+  }
+
+  async getWalletLink(user: RequestUser | undefined, committeeCode: string, targetMemberId: number) {
+    if (!user?.memberId) throw new ForbiddenException();
+    const { committee, membership } = await this.requireMembership(user, committeeCode.trim().toUpperCase());
+    if (membership.role !== 'Leader' && membership.role !== 'Co-Leader') throw new ForbiddenException();
+
+    const target = await this.prisma.memberCommittee.findFirst({
+      where: {
+        committeeId: committee.committeeId,
+        memberId: targetMemberId,
+        member: { isActive: true, person: { isActive: true } },
+      },
+      select: {
+        member: { select: { membershipNumber: true } },
+        walletLinks: {
+          where: { revokedAt: null },
+          select: { verifiedAt: true },
+          take: 1,
+        },
+      },
+    });
+    if (!target) throw new NotFoundException();
+    return {
+      membershipNumber: target.member.membershipNumber,
+      walletLinked: target.walletLinks.length > 0,
+    };
   }
 
   async updatePoints(user: RequestUser | undefined, committeeCode: string, targetMemberId: number, dto: UpdateCommitteePointsDto) {

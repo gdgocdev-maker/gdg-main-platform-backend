@@ -20,6 +20,7 @@ export interface RegistrationEmail {
   confirmationDeadline?: Date;
   // Set for CONFIRMED: inline QR and a PNG attachment are sent to the member.
   attendanceQrCodeDataUrl?: string;
+  walletUrl?: string;
   eventStartsAt?: Date;
   eventLocation?: string | null;
 }
@@ -107,20 +108,22 @@ export class RegistrationEmailService {
         '<p><img src="cid:event-attendance-qr" alt="Event attendance QR code" width="240" height="240"></p><p>The QR code is also attached as a PNG file. Show it to the PR team at the event entrance.</p>';
     }
 
+    const requiresResponse =
+      (email.kind === 'ACCEPTED' || email.kind === 'PROMOTED') && !!email.confirmationDeadline;
     const subject =
       email.kind === 'REJECTED'
         ? `Update on your registration: ${email.eventName}`
-        : email.kind === 'CONFIRMED'
-          ? `Your attendance is confirmed: ${email.eventName}`
-          : `You have a place at ${email.eventName} - please confirm`;
-    const requiresResponse =
-      email.kind === 'ACCEPTED' || email.kind === 'PROMOTED';
+        : requiresResponse
+          ? `You have a place at ${email.eventName} - please confirm`
+          : `Your attendance is confirmed: ${email.eventName}`;
     const message =
       email.kind === 'REJECTED'
         ? `Your registration for ${email.eventName} was not accepted this time.`
         : email.kind === 'CONFIRMED'
           ? `Your attendance for ${email.eventName} is confirmed. Your QR code is below and attached.`
-          : email.kind === 'PROMOTED'
+          : !requiresResponse
+            ? `Good news, ${email.recipientName}: your place at ${email.eventName} is confirmed. Use your membership card at check-in.`
+            : email.kind === 'PROMOTED'
             ? `Good news, ${email.recipientName}: a place has become available for ${email.eventName}. Confirm it before the deadline.`
             : `Good news, ${email.recipientName}: your registration for ${email.eventName} has been accepted. Please confirm your place before the deadline.`;
     const text = [
@@ -132,6 +135,7 @@ export class RegistrationEmailService {
       email.kind === 'CONFIRMED'
         ? 'Your attendance QR code is attached. Show it to the PR team at the event entrance.'
         : '',
+      email.walletUrl ? `Add to Apple Wallet: ${email.walletUrl}` : '',
       '',
       'GDG on Campus - University of Jeddah',
     ]
@@ -140,7 +144,10 @@ export class RegistrationEmailService {
     const responseLink = requiresResponse
       ? `<a href="${escapeHtml(eventUrl)}">Open your event registration</a>`
       : '';
-    const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#202124;line-height:1.6"><h2>${escapeHtml(subject)}</h2><p>${escapeHtml(message)}</p>${details.map((line) => `<p>${escapeHtml(line)}</p>`).join('')}${qrHtml}<p>${responseLink}</p><p>GDG on Campus - University of Jeddah</p></body></html>`;
+    const walletLink = email.walletUrl
+      ? `<p><a style="display:inline-block;background:#202124;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none" href="${escapeHtml(email.walletUrl)}">Add to Apple Wallet</a></p>`
+      : '';
+    const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#202124;line-height:1.6"><h2>${escapeHtml(subject)}</h2><p>${escapeHtml(message)}</p>${details.map((line) => `<p>${escapeHtml(line)}</p>`).join('')}${qrHtml}${walletLink}<p>${responseLink}</p><p>GDG on Campus - University of Jeddah</p></body></html>`;
     await this.smtp.sendMail({
       from,
       to: email.to,
@@ -156,24 +163,4 @@ export class RegistrationEmailService {
     });
   }
 
-  // Email delivery failures never undo an already committed registration change.
-  async sendSafely(email: RegistrationEmail): Promise<void> {
-    try {
-      await this.send(email);
-    } catch (error) {
-      const code =
-        error &&
-        typeof error === 'object' &&
-        'code' in error &&
-        typeof error.code === 'string'
-          ? error.code
-          : undefined;
-      this.logger.error({
-        event: 'registration_email_failed',
-        kind: email.kind,
-        registrationId: email.registrationId,
-        error: code ?? (error instanceof Error ? error.name : 'UNKNOWN'),
-      });
-    }
-  }
 }

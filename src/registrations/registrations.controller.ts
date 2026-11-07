@@ -19,6 +19,7 @@ import {
 } from '../auth/current-user.js';
 import { apiSuccess } from '../common/http/api-response.js';
 import { CheckInService } from './check-in.service.js';
+import { RegistrationEmailDeliveryService } from './registration-email-delivery.service.js';
 import {
   DataEventReportQueryDto,
   CheckInDto,
@@ -49,6 +50,8 @@ export class RegistrationsController {
     private readonly reviewService: RegistrationReviewService,
     @Inject(CheckInService)
     private readonly checkInService: CheckInService,
+    @Inject(RegistrationEmailDeliveryService)
+    private readonly emailDelivery: RegistrationEmailDeliveryService,
   ) {}
 
   @Get('data/event-reports/events')
@@ -135,6 +138,15 @@ export class RegistrationsController {
       staffMemberId(user),
     );
     return apiSuccess(result);
+  }
+
+  @Post('registrations/:registrationId/email/retry')
+  @HttpCode(202)
+  async retryEmail(
+    @Param('registrationId', ParseIntPipe) registrationId: number,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return apiSuccess(await this.emailDelivery.retry(registrationId, staffMemberId(user)));
   }
 
   @Put('events/:eventId/waitlist')

@@ -138,8 +138,12 @@ components:
         data:
           type: object
           additionalProperties: true
-          required: [socialLinks]
+          required: [socialLinks, membershipNumber]
           properties:
+            membershipNumber:
+              type: [integer, 'null']
+              minimum: 100001
+              description: Stable public membership number. Null for guests and inactive members.
             socialLinks:
               $ref: '#/components/schemas/SocialLinks'
         error:
