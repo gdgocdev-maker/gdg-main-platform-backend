@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Inject, Param, ParseIntPipe, Patch, Post, Req } from '@nestjs/common';
 import { apiSuccess } from '../common/http/api-response.js';
 import type { RequestUser } from '../auth/auth.guard.js';
-import { AddMemberToCommitteeDto, AssignClubPersonDto, RemoveClubPersonDto, UpdateCommitteePointsDto } from './committee-dashboard.dto.js';
+import { AddMemberToCommitteeDto, AssignClubPersonDto, RemoveClubPersonDto, UpdateGlobalPointsDto } from './committee-dashboard.dto.js';
 import { CommitteeDashboardService } from './committee-dashboard.service.js';
 import { LeadershipTasksService } from './leadership-tasks.service.js';
 import { CreateLeadershipTaskDto, ReviewCommitteeTaskDto, UpdateLeadershipTaskDto } from './committee-dashboard.dto.js';
@@ -68,8 +68,8 @@ export class ClubLeadershipDashboardController {
   async updateGlobalPoints(
     @Req() request: { user?: RequestUser },
     @Param('memberId', ParseIntPipe) memberId: number,
-    @Body() body: UpdateCommitteePointsDto,
+    @Body() body: UpdateGlobalPointsDto,
   ) {
-    return apiSuccess(await this.dashboard.updateDeveloperLeaderPoints(request.user, memberId, body));
+    return apiSuccess(await this.dashboard.updateGlobalRolePoints(request.user, memberId, body));
   }
 }

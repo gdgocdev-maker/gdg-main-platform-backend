@@ -6,6 +6,43 @@ info:
 servers:
   - url: /
 paths:
+  /club-leadership/dashboard:
+    get:
+      operationId: getClubLeadershipDashboard
+      summary: Get the group leadership overview and role-scoped point balances
+      description: Requires club.dashboard.view (Group Leader or Group Co-Leader). Members with multiple committee or global roles receive separate point totals for each committee membership and global role. A member never receives their own leadership point balances in this overview.
+      security: [{ bearerAuth: [] }, { accessCookie: [] }]
+      responses:
+        '200':
+          description: Club leadership overview. Advisor and Developer Committees Leader balances are separate fields.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      members:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            globalPoints: { type: integer, description: Developer Committees Leader balance; zero when hidden or the role is absent. }
+                            globalPointsVisible: { type: boolean }
+                            advisorPoints: { type: integer, description: Advisor balance; zero when hidden or the role is absent. }
+                            advisorPointsVisible: { type: boolean }
+                            committees:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  code: { type: string }
+                                  role: { type: string, enum: [Member, Leader, Co-Leader] }
+                                  points: { type: integer }
+                                  pointsVisible: { type: boolean }
+        '401': { description: Authentication required. }
+        '403': { description: Caller lacks Group Leader or Group Co-Leader dashboard permission. }
   /my/committees/{committeeCode}/members:
     get:
       operationId: listMyCommitteeMembers
@@ -129,6 +166,35 @@ paths:
         '403': { description: Caller lacks group leadership permission. }
         '404': { description: Account or committee not found. }
         '409': { description: Account, role assignment, or committee membership is inactive or already assigned. }
+  /club-leadership/members/{memberId}/global-points:
+    post:
+      operationId: updateClubLeadershipGlobalPoints
+      summary: Add or deduct advisor or Developer Committees Leader points
+      description: Requires club.points.manage (Group Leader or Group Co-Leader). The target must actively hold the selected global role. Balances are tracked separately by globalRoleCode. Omitting globalRoleCode preserves compatibility and means DEVELOPER_COMMITTEES_LEADER.
+      security: [{ bearerAuth: [] }, { accessCookie: [] }]
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [pointsDelta, reason]
+              properties:
+                pointsDelta: { type: integer, not: { const: 0 } }
+                reason: { type: string, maxLength: 500 }
+                globalRoleCode: { type: string, enum: [ADVISOR, DEVELOPER_COMMITTEES_LEADER], default: DEVELOPER_COMMITTEES_LEADER }
+      responses:
+        '201': { description: Points change recorded in the selected global-role balance. }
+        '400': { description: Invalid point change or reason. }
+        '401': { description: Authentication required. }
+        '403': { description: Caller lacks Group Leader or Group Co-Leader point management permission, or deduction would make the selected balance negative. }
+        '404': { description: Target does not actively hold the selected global role. }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer }

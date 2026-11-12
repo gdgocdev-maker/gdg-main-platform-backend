@@ -539,6 +539,7 @@ model CommitteePointEntry {
 model GlobalPointEntry {
   pointEntryId      Int      @id @default(autoincrement()) @map("point_entry_id")
   memberId          Int      @map("member_id")
+  globalRoleCode    String   @default("DEVELOPER_COMMITTEES_LEADER") @map("global_role_code") @db.VarChar(40)
   awardedByMemberId Int      @map("awarded_by_member_id")
   pointsDelta       Int      @map("points_delta")
   reason            String   @db.VarChar(500)
@@ -547,7 +548,8 @@ model GlobalPointEntry {
   recipient Member @relation("GlobalPointsRecipient", fields: [memberId], references: [memberId], onDelete: Restrict, onUpdate: NoAction)
   awarder   Member @relation("GlobalPointsAwarder", fields: [awardedByMemberId], references: [memberId], onDelete: Restrict, onUpdate: NoAction)
 
-  @@index([memberId, createdAt, pointEntryId])
+  @@index([memberId, createdAt, pointEntryId], map: "global_point_entry_member_created_idx")
+  @@index([memberId, globalRoleCode, createdAt, pointEntryId], map: "global_point_entry_member_role_created_idx")
   @@index([createdAt, pointEntryId])
   @@map("global_point_entry")
 }

@@ -29,6 +29,7 @@ import {
   MEMBER_TASK_STATUSES,
   CreateCommitteeTaskDto,
   UpdateCommitteePointsDto,
+  UpdateGlobalPointsDto,
   UpdateCommitteeEventDto,
   UpdateCommitteeTaskDto,
 } from './committee-dashboard.dto.js';
@@ -172,21 +173,22 @@ export class CommitteeDashboardService {
       this.access.hasGlobalPermission(user.memberId, MEMBERS_PERMISSION),
     ]);
     const [globalPointTotals, globalPoints, globalMonthPoints] = await Promise.all([
-      (this.prisma.globalPointEntry as any).groupBy({ by: ['memberId'], _sum: { pointsDelta: true } }),
+      (this.prisma.globalPointEntry as any).groupBy({ by: ['memberId', 'globalRoleCode'], _sum: { pointsDelta: true } }),
       this.prisma.globalPointEntry.findMany({
         include: { recipient: { include: { person: { select: { fullName: true } } } } },
         orderBy: [{ createdAt: 'desc' }, { pointEntryId: 'desc' }], take: 200,
       }),
-      (this.prisma.globalPointEntry as any).groupBy({ by: ['memberId'], where: { createdAt: { gte: riyadhPeriodStart(new Date(), 'month') } }, _sum: { pointsDelta: true } }),
+      (this.prisma.globalPointEntry as any).groupBy({ by: ['memberId', 'globalRoleCode'], where: { createdAt: { gte: riyadhPeriodStart(new Date(), 'month') } }, _sum: { pointsDelta: true } }),
     ]);
-    const globalPointsByMember = new Map((globalPointTotals as any[]).map((row: any) => [row.memberId, row._sum.pointsDelta ?? 0]));
+    const globalPointsByScope = new Map((globalPointTotals as any[]).map((row: any) => [`${row.memberId}:${row.globalRoleCode}`, row._sum.pointsDelta ?? 0]));
     const memberCommitteePoints = new Map((committeePointTotals as any[]).map((row: any) => [`${row.memberId}:${row.committeeId}`, row._sum.pointsDelta ?? 0]));
     const committeeMonthPoints = new Map((monthPoints as any[]).map((row: any) => [`${row.memberId}:${row.committeeId}`, row._sum.pointsDelta ?? 0]));
-    const globalMonthPointsByMember = new Map((globalMonthPoints as any[]).map((row: any) => [row.memberId, row._sum.pointsDelta ?? 0]));
+    const globalMonthPointsByScope = new Map((globalMonthPoints as any[]).map((row: any) => [`${row.memberId}:${row.globalRoleCode}`, row._sum.pointsDelta ?? 0]));
     const memberCompletedTasks = new Map((completedTasks as any[]).map((row: any) => [row.assignedMemberId, row._count._all]));
     const mappedMembers = (members as any[]).map((member: any) => {
       const self = member.memberId === user.memberId;
       const globalRoleDeveloperLeader = member.roleAssignments.some(({ roleCode }: { roleCode: string }) => roleCode === 'DEVELOPER_COMMITTEES_LEADER');
+      const globalRoleAdvisor = member.roleAssignments.some(({ roleCode }: { roleCode: string }) => roleCode === 'ADVISOR');
       const committeesWithVisibility = member.committees.map(({ role, committeeId, committee }: { role: string; committeeId: number; committee: any }) => {
         const pointsVisible = !self && !globalRoleDeveloperLeader;
         return {
@@ -200,16 +202,23 @@ export class CommitteeDashboardService {
         const pointsVisible = !self && !globalRoleDeveloperLeader;
         return sum + (pointsVisible ? committeeMonthPoints.get(`${member.memberId}:${item.committeeId}`) ?? 0 : 0);
       }, 0);
+      const globalPoints = globalRoleDeveloperLeader ? globalPointsByScope.get(`${member.memberId}:DEVELOPER_COMMITTEES_LEADER`) ?? 0 : 0;
+      const advisorPoints = globalRoleAdvisor ? globalPointsByScope.get(`${member.memberId}:ADVISOR`) ?? 0 : 0;
       const globalPointsVisible = !self && globalRoleDeveloperLeader;
+      const advisorPointsVisible = !self && globalRoleAdvisor;
+      const globalMonthPointsTotal = (globalRoleDeveloperLeader ? globalMonthPointsByScope.get(`${member.memberId}:DEVELOPER_COMMITTEES_LEADER`) ?? 0 : 0)
+        + (globalRoleAdvisor ? globalMonthPointsByScope.get(`${member.memberId}:ADVISOR`) ?? 0 : 0);
       return {
       id: String(member.memberId), name: member.person.fullName,
       email: member.person.emailPersonal ?? '',
       role: [...new Set([...member.committees.map(({ role }: { role: string }) => role), ...member.roleAssignments.map(({ roleCode }: { roleCode: string }) => roleCode)])].join(' / ') || 'Member',
-      status: 'Active' as const, points: self ? 0 : visibleCommitteePoints + (globalPointsVisible ? globalPointsByMember.get(member.memberId) ?? 0 : 0),
-      pointsVisible: !self && (committeesWithVisibility.some((item: any) => item.pointsVisible) || globalPointsVisible),
-      globalPoints: globalPointsVisible ? globalPointsByMember.get(member.memberId) ?? 0 : 0,
+      status: 'Active' as const, points: self ? 0 : visibleCommitteePoints + (globalPointsVisible ? globalPoints : 0) + (advisorPointsVisible ? advisorPoints : 0),
+      pointsVisible: !self && (committeesWithVisibility.some((item: any) => item.pointsVisible) || globalPointsVisible || advisorPointsVisible),
+      globalPoints: globalPointsVisible ? globalPoints : 0,
       globalPointsVisible,
-      visiblePointsThisMonth: visibleCommitteeMonthPoints + (globalPointsVisible ? globalMonthPointsByMember.get(member.memberId) ?? 0 : 0),
+      advisorPoints: advisorPointsVisible ? advisorPoints : 0,
+      advisorPointsVisible,
+      visiblePointsThisMonth: visibleCommitteeMonthPoints + (globalPointsVisible || advisorPointsVisible ? globalMonthPointsTotal : 0),
       tasksCompleted: memberCompletedTasks.get(member.memberId) ?? 0, lastActivity: null,
       committees: committeesWithVisibility,
       globalRoles: member.roleAssignments.map(({ roleCode }: { roleCode: string }) => roleCode),
@@ -259,7 +268,8 @@ export class CommitteeDashboardService {
         ...(globalPoints as any[]).filter((entry: any) => entry.memberId !== user.memberId).map((entry: any) => ({
           id: `global-${entry.pointEntryId}`, memberId: String(entry.memberId), memberName: entry.recipient.person.fullName,
           pointsDelta: entry.pointsDelta, reason: entry.reason, createdAt: entry.createdAt.toISOString(),
-          committeeCode: 'GLOBAL', committeeName: 'Club leadership',
+          committeeCode: entry.globalRoleCode,
+          committeeName: entry.globalRoleCode === 'ADVISOR' ? 'Advisor' : 'Developer Committees Leader',
         })),
       ].sort((a: any, b: any) => b.createdAt.localeCompare(a.createdAt)).slice(0, 200),
       recentActivities: [],
@@ -1234,15 +1244,16 @@ export class CommitteeDashboardService {
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   }
 
-  async updateDeveloperLeaderPoints(user: RequestUser | undefined, targetMemberId: number, dto: UpdateCommitteePointsDto) {
+  async updateGlobalRolePoints(user: RequestUser | undefined, targetMemberId: number, dto: UpdateGlobalPointsDto) {
     if (!user?.memberId || !(await this.access.hasGlobalPermission(user.memberId, CLUB_POINTS_PERMISSION))) throw new ForbiddenException();
     if (user.memberId === targetMemberId) throw new ForbiddenException();
     if (!Number.isSafeInteger(dto.pointsDelta) || dto.pointsDelta === 0) throw new BadRequestException('A non-zero points change is required.');
     const today = new Date();
+    const globalRoleCode = dto.globalRoleCode ?? 'DEVELOPER_COMMITTEES_LEADER';
     const target = await this.prisma.memberRole.findFirst({
       where: {
         memberId: targetMemberId,
-        roleCode: 'DEVELOPER_COMMITTEES_LEADER',
+        roleCode: globalRoleCode,
         AND: [{ OR: [{ startsOn: null }, { startsOn: { lte: today } }] }, { OR: [{ endsOn: null }, { endsOn: { gte: today } }] }],
         member: { isActive: true, person: { isActive: true } },
       },
@@ -1251,10 +1262,10 @@ export class CommitteeDashboardService {
     if (!target) throw new NotFoundException();
     return this.prisma.$transaction(async (transaction) => {
       await transaction.$queryRaw`SELECT member_id FROM member WHERE member_id = ${targetMemberId} FOR UPDATE`;
-      const current = await transaction.globalPointEntry.aggregate({ where: { memberId: targetMemberId }, _sum: { pointsDelta: true } });
+      const current = await transaction.globalPointEntry.aggregate({ where: { memberId: targetMemberId, globalRoleCode }, _sum: { pointsDelta: true } });
       if ((current._sum.pointsDelta ?? 0) + dto.pointsDelta < 0) throw new ForbiddenException('A points deduction cannot reduce a member below zero.');
       const entry = await transaction.globalPointEntry.create({
-        data: { memberId: targetMemberId, awardedByMemberId: user.memberId!, pointsDelta: dto.pointsDelta, reason: dto.reason.trim() },
+        data: { memberId: targetMemberId, globalRoleCode, awardedByMemberId: user.memberId!, pointsDelta: dto.pointsDelta, reason: dto.reason.trim() },
       });
       return {
         id: String(entry.pointEntryId), memberId: String(targetMemberId), memberName: target.member.person.fullName,

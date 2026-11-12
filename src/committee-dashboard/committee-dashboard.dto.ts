@@ -224,6 +224,12 @@ export class UpdateCommitteePointsDto {
   reason!: string;
 }
 
+export class UpdateGlobalPointsDto extends UpdateCommitteePointsDto {
+  @IsOptional()
+  @IsIn(['ADVISOR', 'DEVELOPER_COMMITTEES_LEADER'])
+  globalRoleCode?: 'ADVISOR' | 'DEVELOPER_COMMITTEES_LEADER';
+}
+
 export const EVENT_TYPES = ['Workshop', 'Conference', 'Talk', 'Panel', 'Hackathon', 'Trip'] as const;
 export const REGISTRANT_FIELDS = ['fullName', 'college', 'major', 'phone', 'email', 'membership'] as const;
 export const EVENT_QUESTION_TYPES = ['TEXT', 'SELECT', 'RADIO', 'CHECKBOX'] as const;
