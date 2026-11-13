@@ -19,15 +19,16 @@ services:
       dockerfile_inline: |
         FROM node:24.20.0-bookworm
         WORKDIR /app
-        RUN corepack enable && corepack prepare pnpm@12.3.4 --activate
+        RUN corepack enable && corepack prepare pnpm@12.4.1 --activate
         COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
         RUN pnpm install --frozen-lockfile
-    command: pnpm dev --hostname 0.0.0.0
+    command: pnpm dev --webpack --hostname 0.0.0.0
     depends_on:
       backend:
         condition: service_healthy
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:3001
+      NEXT_PUBLIC_USE_API: 'true'
+      API_PROXY_TARGET: http://backend:3001
       NEXT_TELEMETRY_DISABLED: '1'
     ports:
       - '127.0.0.1:3000:3000'

@@ -48,8 +48,13 @@ services:
     environment:
       PORT: 3001
       NODE_ENV: development
-      COMMITTEE_DASHBOARD_AUTH_BYPASS: ${COMMITTEE_DASHBOARD_AUTH_BYPASS:-true}
       FRONTEND_URL: http://localhost:3000
+      BETTER_AUTH_URL: http://localhost:3000
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in .env}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-GDG on Campus UJ <noreply@gdguj.org>}
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public
     ports:
       - "3001:3001"
