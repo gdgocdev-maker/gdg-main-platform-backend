@@ -33,7 +33,7 @@ export function createBetterAuth(prisma: PrismaService, email: ResendAuthEmailSe
       },
     },
     session: { modelName: 'AuthSession', cookieCache: { enabled: false } },
-    account: { modelName: 'AuthAccount', accountLinking: { enabled: true, trustedProviders: ['google'], allowDifferentEmails: false } },
+    account: { modelName: 'AuthAccount', accountLinking: { enabled: true, trustedProviders: [], allowDifferentEmails: false } },
     verification: { modelName: 'AuthVerification' },
     rateLimit: { enabled: true, storage: 'database', modelName: 'BetterAuthRateLimit', window: 60, max: 100, customRules: {
       '/sign-in/email': { window: 60, max: 5 },

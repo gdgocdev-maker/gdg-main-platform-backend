@@ -127,3 +127,7 @@ The harness `--live` mode requires the configured owner inbox/key/sender in igno
 ## Compose configuration audit
 
 The full-platform overlay now enables the frontend API client, proxies same-origin API requests to `http://backend:3001` on the Compose network, uses the frontend's pinned pnpm 12.4.1 and starts webpack. The backend service explicitly receives Better Auth, Google and Resend environment settings; the obsolete auth-bypass variable is removed. Both Compose YAML files parse successfully with Ruby YAML. Docker execution remains unverified because Docker is not installed here. On a Docker-equipped machine, use `FRONTEND_PATH=../frontend docker compose -f docker-compose.yml -f compose.platform.yml up --build` from this checkout after setting local Postgres variables and the auth placeholders in ignored `.env`. Do not exercise real-recipient auth flows during that check without further owner authorization; the two approved live messages have already been sent.
+
+## Review correction: verified Google linking
+
+Removed Google from Better Auth's `trustedProviders` (explicit empty list). Provider trust bypassed the provider's `email_verified` claim when linking an existing verified local user. The regression first presents a validly signed Google identity with `email_verified: false` and asserts error redirect, no session and no attached Google account; the same identity with `email_verified: true` still links successfully. All four local auth integration tests pass after the fix. Google signup locale/welcome review work remains in progress.

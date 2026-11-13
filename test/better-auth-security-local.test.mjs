@@ -69,7 +69,8 @@ test('mocked Google callback validates state and links verified Google email to 
     const existing = await f.prisma.authUser.findUniqueOrThrow({ where: { email: f.email } });
     const { privateKey, publicKey } = await generateKeyPair('RS256');
     const jwk = { ...await exportJWK(publicKey), kid: 'synthetic-google-key', alg: 'RS256', use: 'sig' };
-    const idToken = await new SignJWT({ email: f.email, email_verified: true, name: 'Synthetic Google user' }).setProtectedHeader({ alg: 'RS256', kid: jwk.kid }).setIssuer('https://accounts.google.com').setAudience('synthetic-client').setSubject(`google-${existing.id}`).setIssuedAt().setExpirationTime('5m').sign(privateKey);
+    const signIdentity = async (verified) => new SignJWT({ email: f.email, email_verified: verified, name: 'Synthetic Google user' }).setProtectedHeader({ alg: 'RS256', kid: jwk.kid }).setIssuer('https://accounts.google.com').setAudience('synthetic-client').setSubject(`google-${existing.id}`).setIssuedAt().setExpirationTime('5m').sign(privateKey);
+    let idToken = await signIdentity(false);
     let tokenExchanges = 0;
     globalThis.fetch = async (input) => {
       const url = typeof input === 'string' ? input : input.url ?? input.toString();
@@ -86,6 +87,12 @@ test('mocked Google callback validates state and links verified Google email to 
     const rejected = await f.call('/callback/google?code=synthetic&state=wrong-state', undefined, bad.cookie);
     assert.match(rejected.headers.get('location') ?? '', /error=/);
     assert.equal(tokenExchanges, 0);
+    const unverified = await begin();
+    const denied = await f.call(`/callback/google?code=synthetic&state=${encodeURIComponent(unverified.state)}`, undefined, unverified.cookie);
+    assert.match(denied.headers.get('location') ?? '', /error=/);
+    assert.equal(await (await f.call('/get-session', undefined, cookies(denied))).json(), null);
+    assert.equal(await f.prisma.authAccount.count({ where: { userId: existing.id, providerId: 'google' } }), 0);
+    idToken = await signIdentity(true);
     const good = await begin();
     const accepted = await f.call(`/callback/google?code=synthetic&state=${encodeURIComponent(good.state)}`, undefined, good.cookie);
     assert.equal(accepted.status, 302);
