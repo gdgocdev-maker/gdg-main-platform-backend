@@ -1,0 +1,115 @@
+openapi: 3.1.0
+info:
+  title: GDG account provisioning alongside Better Auth
+  version: 1.0.0
+  description: >-
+    Coordinated breaking auth migration. Backend paths below are reached through the
+    frontend /api proxy. Credential/session endpoints are served by Better Auth at
+    /api/auth; its generated OpenAPI document is GET /api/auth/open-api/generate-schema.
+    Better Auth responses use its native schema; application endpoints retain the GDG envelope.
+    Supabase bearer JWTs, refresh and setup endpoints are retired.
+paths:
+  /account/check-email:
+    post:
+      summary: Select the email-first sign-in screen
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email, maxLength: 255 }
+      responses:
+        '200':
+          description: GDG envelope with data.nextStep PASSWORD_REQUIRED, PASSWORD_SETUP_REQUIRED or SIGNUP_REQUIRED
+        '400': { description: Invalid email (GDG error envelope) }
+        '429': { description: Rate limit exceeded }
+  /account/signup:
+    post:
+      summary: Create unverified credentials and stage an application, without granting roles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fullName, email, password, registrationType, applicationData]
+              properties:
+                fullName: { type: string, maxLength: 255 }
+                email: { type: string, format: email, maxLength: 255 }
+                password: { type: string, minLength: 8, maxLength: 72 }
+                universityEmail: { type: string, format: email }
+                locale: { type: string, enum: [en, ar], default: en }
+                registrationType: { type: string, enum: [MEMBER, NON_MEMBER] }
+                applicationData:
+                  type: object
+                  required: [phoneNumber, university, college, major, level, gender]
+                  properties:
+                    phoneNumber: { type: string, maxLength: 50 }
+                    universityEmail: { type: string, format: email }
+                    university: { type: string, maxLength: 255 }
+                    branch: { type: string, maxLength: 100 }
+                    college: { type: string, maxLength: 255 }
+                    major: { type: string, maxLength: 255 }
+                    level: { type: string, maxLength: 30 }
+                    gender: { type: string, enum: [female, male] }
+                    skillsByCommittee: { type: object, additionalProperties: { type: array, items: { type: string } } }
+                committees:
+                  type: array
+                  items:
+                    type: object
+                    required: [committeeCode, requestedRole]
+                    properties:
+                      committeeCode: { type: string, pattern: '^[A-Z0-9_]{1,20}$' }
+                      requestedRole: { type: string, enum: [Leader, Co-Leader, Advisor, Member] }
+                requestedGlobalRoles:
+                  type: array
+                  uniqueItems: true
+                  items: { type: string, enum: [ADVISOR, DEVELOPER_COMMITTEES_LEADER] }
+      responses:
+        '201': { description: GDG envelope with data.emailVerificationRequired true }
+        '400': { description: Invalid profile or committee selection }
+        '409': { description: Email already reserved }
+        '429': { description: Rate limit exceeded }
+        '503': { description: Email provider unavailable }
+  /account/profile-status:
+    get:
+      summary: Reconcile verified staged signup and select profile-completion or signed-in destination
+      security: [{ session: [] }]
+      responses:
+        '200': { description: GDG envelope with data.nextStep SIGNED_IN or COMPLETE_PROFILE and profile email/fullName }
+        '401': { description: No verified session }
+  /account/complete-profile:
+    post:
+      summary: Complete profile for a verified OAuth or otherwise unprofiled account
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              description: Same application fields as signup, omitting email, password and locale. Email comes from the verified server session.
+              type: object
+              required: [fullName, registrationType, applicationData]
+              properties:
+                fullName: { type: string, maxLength: 255 }
+                registrationType: { type: string, enum: [MEMBER, NON_MEMBER] }
+                applicationData: { $ref: '#/paths/~1account~1signup/post/requestBody/content/application~1json/schema/properties/applicationData' }
+                committees: { $ref: '#/paths/~1account~1signup/post/requestBody/content/application~1json/schema/properties/committees' }
+                requestedGlobalRoles: { $ref: '#/paths/~1account~1signup/post/requestBody/content/application~1json/schema/properties/requestedGlobalRoles' }
+      responses:
+        '200': { description: GDG envelope with data.registrationPendingApproval boolean }
+        '400': { description: Invalid application }
+        '401': { description: No verified session }
+        '403': { description: Invalid mutation origin }
+        '409': { description: Conflicting application identity }
+        '429': { description: Rate limit exceeded }
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: better-auth.session_token
+      description: HttpOnly session cookie; production name has __Secure- prefix. Never a client role claim.

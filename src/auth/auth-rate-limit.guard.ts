@@ -54,8 +54,7 @@ export class AuthRateLimitGuard implements CanActivate {
     if (!rules?.length) return true;
 
     const request = context.switchToHttp().getRequest<RateLimitRequest>();
-    const secret = this.config.get<string>('SUPABASE_SECRET_KEY')
-      ?? this.config.getOrThrow<string>('SUPABASE_SERVICE_ROLE_KEY');
+    const secret = this.config.getOrThrow<string>('BETTER_AUTH_SECRET');
     for (const rule of rules) {
       const value = this.dimensionValue(request, rule.dimension);
       if (!value) continue;

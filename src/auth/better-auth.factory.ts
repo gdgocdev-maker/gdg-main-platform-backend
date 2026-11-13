@@ -1,4 +1,6 @@
 import { betterAuth } from 'better-auth';
+import { APIError } from 'better-auth/api';
+import { openAPI } from 'better-auth/plugins';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { randomUUID } from 'node:crypto';
 import type { PrismaService } from '../prisma/prisma.service.js';
@@ -12,12 +14,13 @@ export function createBetterAuth(prisma: PrismaService, email: ResendAuthEmailSe
   if (!secret || secret.length < 32) throw new Error('BETTER_AUTH_SECRET must contain at least 32 characters');
   return betterAuth({
     appName: 'GDG on Campus UJ',
+    plugins: [openAPI({ disableDefaultReference: true })],
     baseURL: process.env.BETTER_AUTH_URL ?? origin,
     basePath: '/api/auth',
     secret,
     trustedOrigins: [origin],
     database: prismaAdapter(prisma, { provider: 'postgresql', transaction: true }),
-    advanced: { database: { generateId: () => randomUUID() }, defaultCookieAttributes: { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' } },
+    advanced: { ipAddress: { ipAddressHeaders: ['x-gdg-client-ip'] }, database: { generateId: () => randomUUID() }, defaultCookieAttributes: { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' } },
     user: {
       modelName: 'AuthUser',
       additionalFields: { locale: { type: 'string', required: false, defaultValue: 'en' } },
@@ -31,6 +34,19 @@ export function createBetterAuth(prisma: PrismaService, email: ResendAuthEmailSe
     session: { modelName: 'AuthSession', cookieCache: { enabled: false } },
     account: { modelName: 'AuthAccount', accountLinking: { enabled: true, trustedProviders: ['google'], allowDifferentEmails: false } },
     verification: { modelName: 'AuthVerification' },
+    rateLimit: { enabled: true, storage: 'database', modelName: 'BetterAuthRateLimit', window: 60, max: 100, customRules: {
+      '/sign-in/email': { window: 60, max: 5 },
+      '/sign-up/email': { window: 60, max: 3 },
+      '/request-password-reset': { window: 60, max: 3 },
+      '/send-verification-email': { window: 60, max: 2 },
+    } },
+    databaseHooks: {
+      user: { update: { before: async (user, context) => {
+        if (!user.email || !context?.path?.includes('change-email')) return;
+        const owner = await prisma.person.findFirst({ where: { emailPersonal: { equals: user.email, mode: 'insensitive' } }, select: { authUserId: true } });
+        if (owner && owner.authUserId !== context?.context.session?.user.id) throw new APIError('CONFLICT', { message: 'Email address is already associated with an application profile.' });
+      } } },
+    },
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,

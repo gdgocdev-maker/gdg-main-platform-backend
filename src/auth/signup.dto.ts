@@ -33,6 +33,8 @@ class SignupCommitteeDto {
 }
 
 export class SignupDto {
+  @IsOptional() @IsIn(['en', 'ar']) locale?: 'en' | 'ar';
+
   @IsString({ message: 'fullName must be text.' })
   @Matches(/\S/, { message: 'fullName is required.' })
   @MaxLength(255, { message: 'fullName must be at most 255 characters.' })

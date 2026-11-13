@@ -771,3 +771,12 @@ model AuthVerification {
   @@index([identifier])
   @@map("auth_verification")
 }
+
+model BetterAuthRateLimit {
+  id          String @id @db.Uuid
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+
+  @@map("better_auth_rate_limit")
+}

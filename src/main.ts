@@ -1,10 +1,13 @@
+import { toNodeHandler } from 'better-auth/node';
+import { BetterAuthService } from './auth/better-auth.service.js';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module.js';
 import { getAllowedFrontendOrigins } from './common/http/frontend-origins.js';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
   app.enableShutdownHooks();
   const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? 0);
   if (!Number.isSafeInteger(trustProxyHops) || trustProxyHops < 0) {
@@ -26,6 +29,14 @@ async function bootstrap() {
     if (process.env.NODE_ENV === 'production') response.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     next();
   });
+  const authHandler = toNodeHandler(app.get(BetterAuthService).auth);
+  app.getHttpAdapter().getInstance().all('/api/auth/{*path}', (request: Request, response: Response) => {
+    // Never trust a caller-supplied auth IP header. Express resolves the configured proxy chain.
+    request.headers['x-gdg-client-ip'] = request.ip ?? request.socket.remoteAddress ?? '127.0.0.1';
+    return authHandler(request, response);
+  });
+  app.useBodyParser('json');
+  app.useBodyParser('urlencoded', { extended: true });
   await app.listen(process.env.PORT ?? 3001);
 }
 await bootstrap();
