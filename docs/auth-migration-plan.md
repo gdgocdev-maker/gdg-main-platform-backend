@@ -1,6 +1,6 @@
 # Better Auth and Resend migration
 
-Status: implementation complete; local validation results and deployment prerequisites below. Coordinated owner-approved cutover is still required.
+Status: implementation and local validation complete, including Compose and independent review; deployment prerequisites below. Coordinated owner-approved cutover is still required.
 
 ## Source and base verification (2026-11-13)
 
@@ -137,3 +137,13 @@ Removed Google from Better Auth's `trustedProviders` (explicit empty list). Prov
 Frontend Google sign-in now includes normalized EN/AR locale in OAuth state. Backend creates new Google users with that locale and uses a persisted atomic welcome-delivery claim plus a Resend idempotency key. Welcome runs for verified sessions as well as email verification, and repeat sign-ins do not resend it. Failed delivery releases the claim for a later login retry. Migration `20261113230000_auth_welcome_delivery` adds the nullable marker (45 migrations total). Local recording-only integration tests now pass 6/6, including both AR and EN Google signup and repeated login. No additional real email was sent during review fixes.
 
 Docker/Colima and standalone Compose became available during final review. The merged Compose configuration validates with `docker-compose ... config --quiet`; actual runtime verification is in progress while Colima initializes. Earlier statements that Docker was absent describe the initial validation environment.
+
+## Final Compose result and independent review
+
+Docker/Colima initialization completed in the dedicated `gdg-auth-validation` VM. The existing frontend inline Dockerfile required BuildKit/Buildx rather than Docker's classic builder. Backend and frontend images built from the current migration branches. All three services (frontend, NestJS, Postgres 17) reported healthy. All 45 migrations applied to a separate local Compose database. All six recording-only auth integration tests passed against that database.
+
+A full HTTP smoke test through the containerized frontend on localhost:3002 passed Arabic signup, unverified-login rejection, verification link landing, login/HttpOnly cookie, application profile with no granted roles, reset link landing/submission, previous-session revocation, old-password rejection and new-password login. The temporary validation overlay used backend port 3103, Postgres port 55440, a disabled API key and a synthetic-recipient-only Resend fetch recorder. No real mail or remote DB traffic occurred. Native browser/UI screenshots and the two earlier authorized live email receipts remain the separately documented evidence above. The validation stack and dedicated VM were stopped afterward; no unrelated VM was touched.
+
+Independent re-review confirmed both Google findings fixed, six local auth integration tests passing, backend lint/typecheck/266 unit tests/build passing, frontend webpack build passing, and the same 198-pass/10-fail older schema e2e result. No further concrete code findings were reported. Frontend baseline lint/Turbopack limitations remain as described; they are not reported as passing.
+
+For Compose on this checkout, ensure Buildx and Compose are discoverable, then use the documented full-platform command. The equivalent standalone invocation is `DOCKER_BUILDKIT=1 docker-compose -f docker-compose.yml -f compose.platform.yml up --build` with `FRONTEND_PATH=../frontend` and local-only environment settings. Avoid parallel Prisma generation/build checks against the same bind-mounted checkout.
