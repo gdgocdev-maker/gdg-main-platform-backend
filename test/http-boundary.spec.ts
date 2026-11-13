@@ -180,8 +180,8 @@ describe('HTTP error boundary', () => {
     },
     ...[413, 429, 503].map((status) => ({
       status,
-      code: status === 429 ? 'TOO_MANY_REQUESTS' : 'HTTP_ERROR',
-      message: status === 429 ? 'Too many requests. Please try again later.' : 'The request could not be completed.',
+      code: status === 429 ? 'TOO_MANY_REQUESTS' : status === 503 ? 'SERVICE_UNAVAILABLE' : 'HTTP_ERROR',
+      message: status === 429 ? 'Too many requests. Please try again later.' : status === 503 ? 'The service is temporarily unavailable.' : 'The request could not be completed.',
     })),
   ])(
     'formats HTTP $status through AppModule registration',
@@ -204,6 +204,8 @@ describe('HTTP error boundary', () => {
             {
               event: 'http_request_failed',
               category: 'HTTP_SERVER_ERROR',
+              errorName: 'HttpException',
+              errorCode: undefined,
               method: 'GET',
               status,
               code,
@@ -271,6 +273,8 @@ describe('HTTP error boundary', () => {
         {
           event: 'http_request_failed',
           category: 'UNEXPECTED_EXCEPTION',
+          errorName: 'Error',
+          errorCode: undefined,
           method: 'GET',
           status: 500,
           code: 'INTERNAL_ERROR',
@@ -391,6 +395,8 @@ describe('HTTP error boundary', () => {
                 {
                   event: 'http_request_failed',
                   category: 'UNEXPECTED_EXCEPTION',
+                  errorName: 'Error',
+                  errorCode: undefined,
                   method: 'HEAD',
                   status: 500,
                   code: 'INTERNAL_ERROR',

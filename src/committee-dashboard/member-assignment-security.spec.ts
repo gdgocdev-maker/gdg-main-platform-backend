@@ -41,7 +41,7 @@ function makeService() {
 describe('committee-specific member assignment security', () => {
   const user = { personId: 10, memberId: 20 };
 
-  it('adds only the Member role to the caller’s own permitted committee', async () => {
+  it('adds only the Member role to the callerâ€™s own permitted committee', async () => {
     const { service, prisma, transaction, hasCommitteePermission } = makeService();
     prisma.committee.findUnique.mockResolvedValue({ committeeId: 6, committeeCode: 'DATA' });
     prisma.memberCommittee.findUnique.mockResolvedValue({

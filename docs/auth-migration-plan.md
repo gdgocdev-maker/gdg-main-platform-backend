@@ -1,6 +1,6 @@
 # Better Auth and Resend migration
 
-Status: audit complete; implementation and validation pending. Do not deploy this branch until the acceptance checklist is complete.
+Status: implementation complete; local validation results and deployment prerequisites below. Coordinated owner-approved cutover is still required.
 
 ## Source and base verification (2026-11-13)
 
@@ -8,7 +8,7 @@ Fetched all remotes with prune in both repositories and inspected remote branche
 
 The user's migration instruction supersedes the older Supabase credential-ownership decision. NestJS remains authoritative; Next.js remains a frontend/proxy. Existing membership approval policy is unchanged.
 
-## Implemented auth inventory
+## Pre-migration auth inventory (audited before implementation)
 
 | Location | Current dependency / migration requirement |
 | --- | --- |
@@ -35,17 +35,17 @@ Repository SQL search found no `auth.uid()` policies, no FK to `auth.users`, and
 
 ## Target design
 
-Use current stable Better Auth (npm latest inspected: 1.7.23), Prisma 7 adapter and existing PrismaService. Mount the Node handler on NestJS before body parsing. Use same-origin Next.js proxy: public `/api/auth/*` routes reach NestJS `/auth/*`. Public auth base URL is the frontend origin plus `/api/auth`; exact trusted frontend origins only. HttpOnly, Secure in production, SameSite=Lax cookies support OAuth callback navigation. No frontend database or auth authority. Retire Supabase sessions at cutover and require fresh login.
+Use current stable Better Auth (npm latest inspected: 1.7.23), Prisma 7 adapter and existing PrismaService. Mount the Node handler on NestJS before body parsing. Use same-origin Next.js proxy: public `/api/auth/*` routes reach NestJS `/api/auth/*`. Public auth base URL is the frontend origin plus `/api/auth`; exact trusted frontend origins only. HttpOnly, Secure in production, SameSite=Lax cookies support OAuth callback navigation. No frontend database or auth authority. Retire Supabase sessions at cutover and require fresh login.
 
 Create separate Better Auth User, Account, Session and Verification tables. IDs are UUID strings and imported users retain Supabase IDs. Person remains application authority, linked by authUserId; role, membership, committee scope, deactivation and approval checks remain unchanged. Never copy roles from OAuth metadata. Persist locale (en/ar); treat locale as presentation data only.
 
 Enable verified email/password, Google, password reset, and verified email change. Keep Google client variable names found in environment examples. Restrict automatic linking to verified Google email and established identity IDs; reject conflicting mappings rather than overwriting Person links. Do not enable unused magic-link sign-in. Preserve staged profile choices and finalize only after verified identity; no direct sign-up path may grant memberships or roles.
 
-One Resend SDK service uses `RESEND_API_KEY` and `EMAIL_FROM`; render escaped bilingual HTML plus plain text for verification, reset, welcome and email-change notifications, including OTP if the existing verification UI retains codes. Reuse frontend GDG logo and Google palette, accessible CTA and RTL Arabic. Local tests inject a recording transport; never send to real addresses. Do not silently report success on failed delivery.
+One Resend SDK service uses `RESEND_API_KEY` and `EMAIL_FROM`; render escaped bilingual HTML plus plain text for verification, reset, welcome and email-change notifications, with email links replacing the former OTP UI; no unused OTP or magic-link sign-in is enabled. Reuse frontend GDG logo and Google palette, accessible CTA and RTL Arabic. Local tests inject a recording transport; never send to real addresses. Do not silently report success on failed delivery.
 
 ## Existing-account import
 
-Implement a local-only, default-dry-run importer for owner-exported auth.users and auth.identities. Never connect to production from this workflow. Validate UUIDs, normalized email uniqueness, duplicate provider IDs, person links, unsupported identities and hash formats before a transactional import. Preserve source user UUID, verified timestamps, locale, bcrypt credential hash and Google `sub` as provider accountId. Do not import sessions, refresh tokens or OAuth access/refresh tokens. Disable banned/deleted accounts. Report counts without emails, hashes or tokens. Reruns must not overwrite passwords changed after import or attach conflicting users.
+Implement a local-only, default-dry-run importer for owner-exported auth.users and auth.identities. Never connect to production from this workflow. Validate UUIDs, normalized email uniqueness, duplicate provider IDs, person links, unsupported identities and hash formats before a transactional import. Preserve source user UUID, verified timestamps, locale, bcrypt credential hash and Google `sub` as provider accountId. Do not import sessions, refresh tokens or OAuth access/refresh tokens. Reject banned/deleted source accounts for explicit owner reconciliation before import. Report counts without emails, hashes or tokens. Reruns must not overwrite passwords changed after import or attach conflicting users.
 
 Password verification accepts imported bcrypt (including Supabase `$2a$`/`$2b$` variants); new/reset passwords use Better Auth's default hashing. Rehash only after successful verification, with compare-and-swap against the original hash. Test login with imported hashes, wrong passwords, repeated import and conflicts. Existing local unlinked people require proven email ownership before linking; never attach by an untrusted submitted email.
 
@@ -53,45 +53,73 @@ Password verification accepts imported bcrypt (including Supabase `$2a$`/`$2b$` 
 
 1. Apply additive Prisma migration to isolated local Postgres; seed only synthetic accounts.
 2. Validate signup → verify → login; reset single-use/expiry and session revocation; mocked Google callback/state/linking; role/deactivation guards; import idempotence and bcrypt login.
-3. Run lint, typecheck, tests and build in both repos. Frontend currently has no test script; add appropriate auth tests.
+3. Run lint, typecheck, tests and build in both repos. The frontend routing tests run through `pnpm test`.
 4. Run Compose locally, browser-test bilingual auth, save auth-page and email HTML/PNG screenshots.
-5. Commit both branches locally. No push, PR, production migration or real mail sending.
+5. Commit both branches locally. No push, PR or production migration. Live mail is limited to the subsequently authorized owner inbox test.
 6. Owner supplies Resend key and verified sender domain, Better Auth secret, public frontend origin, existing Google client credentials and new callback allowlist; provides approved auth export and deployed RLS/trigger inventory. Agree maintenance window, backups, pending-signup handling and coordinated frontend/backend release. Existing reset links and sessions expire at cutover; provide resend path. Keep Supabase auth data until rollback window closes.
 
 Environment observation: Node 26.13.0 is available; pnpm and Docker are absent from PATH and standard Docker Desktop/Homebrew paths. Package installs are being attempted through pinned `npx pnpm`; Docker/Compose validation remains outstanding.
 
-## Implementation checkpoint
+## Final implementation and verification
 
-Foundations added: pinned Better Auth 1.7.23/Resend 6.38.0, additive Prisma models/migration, auth factory (not yet mounted), bcrypt-compatible verifier, bilingual HTML/plain-text templates, Resend service, local-only import planner/executor, and frontend client (not yet used by existing pages). Existing Supabase auth behavior is still active until integration is complete. Do not deploy this checkpoint.
+Better Auth 1.7.23 owns credentials, verification, password reset, Google accounts and database sessions. Native endpoints mount before Nest body parsing. Application signup/profile endpoints use `/account/*`. Prisma migrations add auth tables and persistent rate limits without removing application or Supabase data. Existing roles, active-person checks and membership approvals remain authoritative. Nodemailer remains only for non-auth notifications; obsolete JWT/Passport dependencies and Supabase token verifier are removed.
 
-Validation so far: generated Prisma client; backend TypeScript and Nest build pass; frontend TypeScript passes after `next typegen`; 12 password/template tests and 4 import unit tests pass. A native PostgreSQL 18 instance isolated at loopback port 55439 applied all 43 migrations. `test/better-auth-local.test.mjs` passes against it, exercising real Prisma signup/verification/login/reset and imported bcrypt login, including default dry-run and repeated import. Email transport is injected/recorded, never sent. Docker Compose itself was unavailable. Whole-repository lint has pre-existing failures: backend non-UTF-8 `member-assignment-security.spec.ts`; frontend profile effect and other existing issues. Changed-file backend lint passes.
+Frontend uses the Better Auth client and same-origin proxy; no credential tokens enter browser storage. EN/AR verification and recovery screens preserve the existing design. Seven existing event page exports now wrap their shared component, fixing Next.js invalid page-prop build errors.
 
-Remaining work: wire auth factory into Nest before body parser; replace provider calls/guards/controller cookies while retaining staged membership finalization; synchronize verified email changes to Person identities safely; persistent auth endpoint rate limits; migrate all frontend flows and proxy; update OpenAPI/setup docs; Google callback/role/session tests; browser screenshots and email PNG renders; full checks and final local commits. Factory is currently a tested foundation, not an implemented application cutover.
+Checks on the migration worktree:
+- Backend lint and typecheck pass; Nest build passes when run sequentially after Prisma generation. Unit suite: 266/266 Vitest tests plus importer/schema Node tests pass. Updated stale HTTP and committee test fixtures and repaired one Windows punctuation byte in an existing test file.
+- Local auth integration: 4/4 pass (staged signup/verify/login; repeated import and bcrypt upgrade; unlinked-profile recovery; mocked Google/state/linking; email-change/session protections).
+- Full backend e2e: 198 passed, 10 failed in the older database-schema suite. Its expected roles, committees, permissions, columns, IDs and constraint inventory lag existing main migrations; one CANCELLED-registration fixture also violates the current status-transition constraint. Nest auth lifecycle, Wallet membership and registration suites pass. These failures are not claimed as green.
+- Frontend typecheck and 3 routing tests pass. `next build --webpack` passes. Default Turbopack build fails resolving its Google-font internal module. Full lint retains 6 pre-existing effect/setState errors in profile/dashboard components and 15 warnings. Auth changed-file lint has no errors.
+- Browser through localhost:3000 → Nest :3101 → isolated Postgres: signup 201, login before verification 403, verification link redirects to localized landing, login/profile 200, HttpOnly token not readable in JS, reset request 200; submitting the actual reset form redirects to login; old password 401/new password 200. Recording transport sent no messages for synthetic accounts.
+- Docker is absent on this machine, so Compose itself was not run. Native PostgreSQL 18 on loopback :55439 applied all 44 committed migrations instead. No hosted database was accessed or imported.
 
-Reference documentation consulted: https://better-auth.com/docs/adapters/prisma, https://better-auth.com/docs/authentication/email-password, https://better-auth.com/docs/authentication/google, https://better-auth.com/docs/concepts/users-accounts. Installed Next.js proxy/rewrites guides were read before adding frontend client code.
+Artifacts: backend `artifacts/auth-emails/{verification,reset,welcome,email-change}-{en,ar}.{html,txt,png}`; frontend `artifacts/auth-pages/{login-en,login-ar,signup-en,verification-en,verification-ar,reset-en,forgot-en}.png`. Arabic previews were visually checked. All preview links are synthetic.
 
-Full-suite checkpoint: `vitest run` reports 19 passing/6 failing files, 292 passing/42 failing tests; failures require investigation before final handoff. Frontend production build fails during Google font processing with `next/internal/font/google` module-resolution errors. Neither is reported as passing. Artifacts currently contain HTML/text previews only, not PNG screenshots.
+## Reproduce local checks
 
-## Backend integration checkpoint
+Run commands sequentially in each repository: Prisma generation/build must not race another generation process. Use the pinned package manager (`npx --yes pnpm@12.3.4` backend; `12.4.1` frontend if pnpm is not installed).
 
-Better Auth is now mounted at NestJS `/api/auth/*` before JSON parsing; the Next.js rewrite preserves this prefix. Custom profile/signup endpoints move to backend `/account/*` (frontend `/api/account/*`). Supabase credential operations were removed from AuthService and controller. The global guard reads Better Auth server sessions and retains active Person/Member mapping and exact-origin mutation checks. Verified staged signup is reconciled on authenticated application access, with idempotent finalization and no membership granted to non-member registrants. Verified email changes synchronize application personal-email identities on reconciliation. Native auth uses database rate limiting and an IP header overwritten by Nest from its explicitly configured Express proxy chain. Credential OpenAPI is generated at `/api/auth/open-api/generate-schema`; application operations are in `better-auth-openapi.yaml`.
+```sh
+# Backend, against an explicitly chosen disposable local database only
+export DATABASE_URL=postgresql://gdg_auth_local@127.0.0.1:55439/gdg_auth_migration
+pnpm prisma:migrate:deploy
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm test:auth:local
+# test:auth:local builds first and injects recording email + mocked Google transports.
+# For all e2e, prepare a SECOND disposable local database with migrations:
+TEST_DATABASE_URL=postgresql://gdg_auth_local@127.0.0.1:55439/gdg_schema_test_auth_browser BETTER_AUTH_SECRET=local-test-only-secret-at-least-32-characters pnpm test:e2e
 
-Validation: backend typecheck/build and changed-file lint pass; 29 focused tests pass. Local PostgreSQL integration now covers application signup staging, verification, exactly-once non-member provisioning, password reset, imported bcrypt and rate-limit enforcement. NestJS starts on local port 3101; `/api/auth/get-session` and generated OpenAPI both return HTTP 200. Native PostgreSQL remains isolated on 127.0.0.1:55439. Frontend route rewrites/custom application URLs are updated, but credential flows still require conversion before this coordinated change is usable. Remaining work includes replacing frontend Supabase OAuth and legacy password flows, account setup for unlinked people, stronger email-change atomicity/validation, full OAuth callback tests, final docs/visuals/checks. Do not deploy this intermediate commit.
+# Default dry run; private export contains users[] and identities[] from Supabase.
+pnpm build
+pnpm auth:import /private/path/supabase-auth-export.json
+# Local fixture import only, when ready; reruns are idempotent:
+pnpm auth:import /private/path/supabase-auth-export.json --apply
 
-## Frontend and visual checkpoint
+# Recording local browser server (use a migrated disposable test database)
+DATABASE_URL=postgresql://gdg_auth_local@127.0.0.1:55439/gdg_schema_test_auth_browser node scripts/run-auth-browser-local.mjs
+# Frontend in another terminal
+NEXT_PUBLIC_USE_API=true API_PROXY_TARGET=http://localhost:3101 pnpm exec next dev --webpack
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm exec next build --webpack
+```
 
-Frontend password/Google sign-in, callback, password recovery/reset, logout and verification resend now use Better Auth client/server cookies. Supabase browser SDK and token handoff are removed. Verification UI now explains email links in EN/AR and includes a result landing page; no unused OTP sign-in feature is enabled. The proxy performs optimistic cookie-presence redirects for protected localized routes, with tests; backend authorization remains authoritative. Existing signup stages application data and now sends locale.
+The importer intentionally refuses remote hosts, production mode and URL overrides; an owner-controlled production migration procedure must be approved separately. Keep exports outside Git and delete local copies according to the owner's data handling policy. Never run repository tests against the deployment database.
 
-Captured real local browser PNGs: frontend `artifacts/auth-pages/{login-en,login-ar,signup-en,verification-en,verification-ar,reset-en,forgot-en}.png`; backend `artifacts/auth-emails/{verification,reset,welcome,email-change}-{en,ar}.png`, with HTML/text alongside. Arabic verification page and email screenshots visually inspected. Email links are synthetic preview URLs; no mail was delivered. Frontend dev used webpack on localhost:3000, proxying to local NestJS :3101. Preview tab was closed after captures.
+## Owner configuration and cutover
 
-Frontend focused lint has zero errors/two existing unused-variable warnings; three routing tests pass. Typecheck passed before production generation. Default Turbopack build failed on Google font resolution; webpack build passed compilation but failed existing dashboard event-page props (`eventId` is not a valid page prop). Full final checks still required, including those baseline failures. Backend email-update collision hook now checks profile ownership on all email updates, including verification callbacks; build/typecheck and the local auth flow pass.
+Set the random Better Auth secret, public frontend origin, Google credentials/callback, trusted proxy hop count, and existing DB/Storage credentials. Resend sender is environment-driven, with example `GDG on Campus UJ <noreply@gdguj.org>`. Owner reports gdguj.org verified in Tokyo (ap-northeast-1), including DKIM and send/rsend records. Recommended owner DNS addition: TXT `_dmarc` → `v=DMARC1; p=none;`. The private API key and test inbox belong only in ignored `.env`. Non-sending `domains.list` returned `restricted_api_key`; this permission result does not prove delivery.
 
-Remaining acceptance work: mocked Google callback/security and email-change tests; safe existing unlinked-person setup; complete local browser signup/verify/login/reset with recording email transport; remaining import/password upgrade edge cases; clean obsolete backend auth-only files/config/tests; reconcile all docs and full checks; Compose-specific validation (Docker still unavailable). These intermediate commits are not a deployment handoff.
+Owner must inspect deployed RLS/policies/triggers not represented in Git, supply/reconcile an approved users+identities export, back up data, resolve importer conflicts, arrange coordinated release and rollback, and revoke old Supabase sessions. Old reset/verification links need reissue through the new UI. Keep Supabase DB/Storage and source auth data through the rollback period. Pending signups older than the staging window complete their profile again after verified login.
 
-## Recovery and security checkpoint
+Reference docs: https://better-auth.com/docs/adapters/prisma, https://better-auth.com/docs/authentication/email-password, https://better-auth.com/docs/authentication/google, https://better-auth.com/docs/concepts/users-accounts.
 
-Added `/account/request-password-reset` for both existing credentials and active application-only people. Unlinked people receive an unverified auth identity only; a consumed reset token proves inbox ownership, and verified session reconciliation conditionally links the existing Person without changing its ID or roles. Already-linked identities are not reassigned. The frontend recovery form uses this documented application endpoint while password completion remains Better Auth-native.
+## Authorized live Resend check
 
-Added actual local PostgreSQL tests for unlinked-person proof, single-use recovery/session revocation, unknown-email generic response, mocked Google authorization-code callback/state rejection and verified-email account linking, and two-address email change with old recovery-token invalidation. Four local integration tests pass. Successful imported bcrypt verification now upgrades to the current default hash with compare-and-swap; repeated import preserves the upgrade. Legacy inputs beyond 72 bytes retain bcrypt's existing semantics and defer hash upgrade until reset. Focused auth/membership checks: 34 passing tests, build and typecheck pass. Provider diagnostics are disabled to avoid logging raw OAuth state or recipient details.
+After the owner supplied a key in ignored `.env` and explicitly approved their inbox, the local Nest harness sent exactly one English verification and one English reset email through the production Resend SDK service. No other recipient or welcome message was sent. Resend accepted verification message `01a1d66c-e18e-7511-8a9a-d48b6d570961` and reset message `01a1d66d-1162-7b1c-ab25-06e70ca3ec87`. Both links use `http://localhost:3000`; following them through the Next.js proxy returned HTTP 200 at `/en/verify-email` and `/en/reset-password`. Verification was consumed; reset was not submitted. Inbox delivery/spam placement remains for the owner to confirm. Links are intentionally local test links, not deployment links. Arabic variants were rendered and screenshot-checked without extra live sends.
 
-Current full-suite failures have been narrowed: auth-related dependency-injection mocks were updated; remaining baseline HTTP-error expectations and committee-dashboard mocks still need reconciliation. Legacy Supabase-only e2e tests and verifier cleanup, full browser flow, build/lint failures and final setup/cutover documentation remain outstanding.
+The harness `--live` mode requires the configured owner inbox/key/sender in ignored `.env`, uses an explicitly selected local test DB, rejects all other real recipients, and reserves each message kind before delivery to prevent repeat sending. Private mail links and receipts remain outside Git in `/tmp/gdg-auth-live-owner`. No key, password or live token is committed or logged.

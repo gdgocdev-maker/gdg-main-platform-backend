@@ -11,7 +11,8 @@ const count = vi.fn();
 const service = new CommitteeDashboardService(
   {
     committee: { findMany },
-    memberCommittee: { groupBy },
+    memberCommittee: { groupBy, findMany: vi.fn().mockResolvedValue([]) },
+    committeePointEntry: { groupBy: vi.fn().mockResolvedValue([]), findMany: vi.fn().mockResolvedValue([]) },
     committeeTask: { count },
   } as unknown as PrismaService,
   { hasGlobalPermission } as unknown as CommitteeAccessService,
@@ -35,7 +36,7 @@ describe('Developer Committees Leader dashboard', () => {
   it('reports dashboard access separately from permission to assign members', async () => {
     hasGlobalPermission.mockImplementation(async (_memberId: number, code: string) => code === 'developer_committees.dashboard.view');
     const result = await service.getDeveloperOverview({ personId: 9, memberId: 12 });
-    expect(result.permissions).toEqual({ canAssignMembers: false });
+    expect(result.permissions).toEqual({ canAssignMembers: false, canManagePoints: false });
     expect(result.committees).toHaveLength(1);
   });
   it('returns aggregate developer committee counts without exposing applicant or member records', async () => {
@@ -43,8 +44,9 @@ describe('Developer Committees Leader dashboard', () => {
       .mockResolvedValueOnce([{ committeeId: 2, _count: { _all: 2 } }])
       .mockResolvedValueOnce([{ committeeId: 2, _count: { _all: 5 } }]);
     await expect(service.getDeveloperOverview({ personId: 9, memberId: 12 })).resolves.toEqual({
-      permissions: { canAssignMembers: true },
-      committees: [{ code: 'DATA', name: 'Data Analysis', memberCount: 5, leaderCount: 2, activeTaskCount: 3 }],
+      permissions: { canAssignMembers: true, canManagePoints: true },
+      currentMember: { id: '12', name: '', role: 'DEVELOPER_COMMITTEES_LEADER' }, pointHistory: [],
+      committees: [{ code: 'DATA', name: 'Data Analysis', memberCount: 5, leaderCount: 2, activeTaskCount: 3, leaders: [] }],
     });
     expect(hasGlobalPermission).toHaveBeenCalledWith(12, 'developer_committees.dashboard.view');
     expect(hasGlobalPermission).toHaveBeenCalledWith(12, 'developer_committees.members.assign');
@@ -71,6 +73,7 @@ describe('Club Leadership dashboard', () => {
   it('returns the organization overview with committee details for filtering', async () => {
     const clubService = new CommitteeDashboardService({
       person: { findUnique: vi.fn().mockResolvedValue({ fullName: 'Abdullah' }) },
+      globalPointEntry: { groupBy: vi.fn().mockResolvedValue([]), findMany: vi.fn().mockResolvedValue([]) },
       member: { findMany: vi.fn().mockResolvedValue([{
         memberId: 12,
         isActive: true,
@@ -109,13 +112,14 @@ describe('Club Leadership dashboard', () => {
 
     expect(overview.currentMember).toEqual({ id: '12', name: 'Abdullah', role: 'Club Leadership' });
     expect(overview.members).toEqual([expect.objectContaining({
-      id: '12', role: 'Leader / GROUP_LEADER', points: 8, globalRoles: ['GROUP_LEADER'],
-      committees: [{ code: 'DATA', name: 'Data', role: 'Leader', points: 8 }],
+      id: '12', role: 'Leader / GROUP_LEADER', points: 0, globalRoles: ['GROUP_LEADER'],
+      committees: [{ code: 'DATA', name: 'Data', role: 'Leader', points: 0, pointsVisible: false }],
     })]);
     expect(overview.committees).toEqual([{ code: 'DATA', name: 'Data' }, { code: 'PR', name: 'Public Relations' }]);
     expect(overview.tasks).toEqual([expect.objectContaining({ id: '3', committeeCode: 'DATA', committeeName: 'Data' })]);
-    expect(overview.pointHistory).toEqual([expect.objectContaining({ id: '4', committeeCode: 'DATA', committeeName: 'Data' })]);
-    expect(overview.permissions).toEqual({ canManageTasks: false, canManagePoints: false, canManageRegistrations: false, canAddMembers: true });
+    // A leader cannot see their own point awards in this view.
+    expect(overview.pointHistory).toEqual([]);
+    expect(overview.permissions).toEqual({ canManageTasks: false, canManagePoints: true, canManageRegistrations: false, canAddMembers: true });
     expect(hasGlobalPermission).toHaveBeenCalledWith(12, 'club.dashboard.view');
     expect(hasGlobalPermission).toHaveBeenCalledWith(12, 'members.manage');
   });

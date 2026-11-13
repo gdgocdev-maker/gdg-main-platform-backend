@@ -139,7 +139,7 @@ describe('Committee leader creates an event', () => {
     await expect(reader.getCommitteeEvent(user, 'PR', 4)).rejects.toBeInstanceOf(NotFoundException);
     expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { eventId: 4, committeeId: 2 } }));
 
-    findFirst.mockResolvedValueOnce({ eventId: 4, name: 'Draft talk', status: 'DRAFT', questions: [] });
+    findFirst.mockResolvedValueOnce({ eventId: 4, name: 'Draft talk', status: 'DRAFT', questions: [], requiredRegistrantFields: [] });
     await expect(reader.getCommitteeEvent(user, 'PR', 4)).resolves.toMatchObject({ id: '4', status: 'DRAFT' });
   });
 
