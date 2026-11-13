@@ -41,10 +41,11 @@ export function createBetterAuth(prisma: PrismaService, email: ResendAuthEmailSe
       '/send-verification-email': { window: 60, max: 2 },
     } },
     databaseHooks: {
-      user: { update: { before: async (user, context) => {
-        if (!user.email || !context?.path?.includes('change-email')) return;
+      user: { update: { before: async (user) => {
+        if (!user.email) return;
         const owner = await prisma.person.findFirst({ where: { emailPersonal: { equals: user.email, mode: 'insensitive' } }, select: { authUserId: true } });
-        if (owner && owner.authUserId !== context?.context.session?.user.id) throw new APIError('CONFLICT', { message: 'Email address is already associated with an application profile.' });
+        const current = await prisma.authUser.findUnique({ where: { email: user.email.toLowerCase() }, select: { id: true } });
+        if (owner && owner.authUserId !== current?.id) throw new APIError('CONFLICT', { message: 'Email address is already associated with an application profile.' });
       } } },
     },
     emailAndPassword: {
