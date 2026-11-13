@@ -147,3 +147,40 @@ A full HTTP smoke test through the containerized frontend on localhost:3002 pass
 Independent re-review confirmed both Google findings fixed, six local auth integration tests passing, backend lint/typecheck/266 unit tests/build passing, frontend webpack build passing, and the same 198-pass/10-fail older schema e2e result. No further concrete code findings were reported. Frontend baseline lint/Turbopack limitations remain as described; they are not reported as passing.
 
 For Compose on this checkout, ensure Buildx and Compose are discoverable, then use the documented full-platform command. The equivalent standalone invocation is `DOCKER_BUILDKIT=1 docker-compose -f docker-compose.yml -f compose.platform.yml up --build` with `FRONTEND_PATH=../frontend` and local-only environment settings. Avoid parallel Prisma generation/build checks against the same bind-mounted checkout.
+
+## Email design v2 and publication authorization (2026-11-13)
+
+The owner authorized a full branded bilingual email redesign, then explicitly
+superseded the earlier local-only publication restriction: push
+`feat/better-auth-resend` in both repositories and open linked PRs to `main`.
+Do not merge or deploy. Earlier no-push statements above describe the original scope.
+
+See [email design](email-design.md). Five templates now cover verification, reset,
+welcome, email-change confirmation and a successful-password-reset security notice;
+each has AR/EN HTML and plain text. Verification and recovery lifetimes are explicitly
+one hour. The notice is best-effort after reset and does not cover authenticated
+password changes. There are no API/schema/migration changes in the email redesign.
+
+Current backend lint/typecheck/build pass; 271 Vitest tests and 15 Node tests pass.
+Lint has four pre-existing warnings. All 40 desktop/mobile light/dark screenshots
+pass layout, asset-fixture decode and contrast checks: minimum contrast 5.09:1;
+maximum HTML 8,505 bytes. Artifacts and the six accepted Resend message IDs are in
+`artifacts/auth-emails/v2/` (see `manifest.json` and `resend-receipts.json`). Exactly
+one of each template in EN plus AR verification went only to the owner-authorized
+inbox. These contain synthetic preview links, not usable authentication tokens.
+Resend acceptance does not establish inbox delivery or client rendering.
+
+Public website/PNG availability remains a cutover requirement: `gdguj.org` did not
+resolve in this environment. Screenshots substituted the exact sibling frontend PNG
+for its absolute production URL. Restore public DNS/HTTPS asset serving before
+production emails. Gmail/Outlook/Apple Mail inbox checks remain owner validation;
+Chromium screenshots are not native mail-client certification.
+
+Pre-push gitleaks scanned full histories in both repositories with redaction.
+Frontend: zero findings. Backend: two reviewed false positives only (synthetic
+AUTH_USER_ID UUID in an old unit-test commit and stock NestJS abc123def456 badge
+token in the initial README); a second scan excluded exactly those fingerprints
+and passed. No real secret was found, no environment file is staged, and only
+`.env.example`/`.env.test.example` are tracked. No historical credential data was
+rewritten. Existing schema-e2e, frontend lint and Turbopack limitations documented
+above are not attributed to this redesign.

@@ -1,0 +1,24 @@
+Reset your password · GDG on Campus UJ
+
+A secure link to choose a new password.
+
+A fresh start for your password.
+
+We received a request to reset your password. Choose a new one using the secure link below.
+
+Reset my password: https://gdguj.org/en/login?email-preview=reset
+
+This link expires in 1 hour and can only be used once.
+
+Didn’t request a reset? Ignore this email. Your password will stay the same.
+Never share your verification links or codes.
+
+Need a hand? Contact our team on LinkedIn: https://www.linkedin.com/company/google-developer-student-club-uj/
+
+GDG on Campus · University of Jeddah
+University of Jeddah · Jeddah, Saudi Arabia
+LinkedIn: https://www.linkedin.com/company/google-developer-student-club-uj/
+X: https://x.com/gdguoj?s=11
+
+You received this email because a password reset was requested for your account.
+Automated message from noreply@gdguj.org

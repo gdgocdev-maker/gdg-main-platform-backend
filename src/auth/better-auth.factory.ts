@@ -77,10 +77,14 @@ export function createBetterAuth(prisma: PrismaService, email: ResendAuthEmailSe
       enabled: true,
       requireEmailVerification: true,
       minPasswordLength: 8,
+      resetPasswordTokenExpiresIn: 3600,
       revokeSessionsOnPasswordReset: true,
       onPasswordReset: async ({ user }) => {
         // A successfully consumed recovery token proves ownership of the destination inbox.
         await prisma.authUser.updateMany({ where: { id: user.id, email: user.email }, data: { emailVerified: true } });
+        const locale = ('locale' in user && user.locale === 'ar') ? 'ar' : 'en';
+        // Password is already changed: delivery failures must not report a failed reset.
+        await email.send({ to: user.email, kind: 'password-changed', locale, url: `${origin}/${locale}/login` }).catch(() => undefined);
       },
       password: { hash: hashAuthPassword, verify: async (input) => {
         const valid = await verifyAuthPassword(input);
@@ -96,6 +100,7 @@ export function createBetterAuth(prisma: PrismaService, email: ResendAuthEmailSe
       },
     },
     emailVerification: {
+      expiresIn: 3600,
       sendOnSignUp: true,
       sendOnSignIn: true,
       autoSignInAfterVerification: false,
