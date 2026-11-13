@@ -1,0 +1,24 @@
+Confirm your email change · GDG on Campus UJ
+
+Please confirm before we update your account email.
+
+A new address. Still you.
+
+We received a request to change the email address on your account. Confirm below to continue the change.
+
+Confirm email change: https://gdguj.org/en/login?email-preview=email-change
+
+This confirmation link expires in 1 hour. Follow any verification steps for your new address to finish.
+
+Didn’t request this change? Do not confirm it. Reset your password from the sign-in page and contact our team.
+Never share your verification links or codes.
+
+Need a hand? Contact our team on LinkedIn: https://www.linkedin.com/company/google-developer-student-club-uj/
+
+GDG on Campus · University of Jeddah
+University of Jeddah · Jeddah, Saudi Arabia
+LinkedIn: https://www.linkedin.com/company/google-developer-student-club-uj/
+X: https://x.com/gdguoj?s=11
+
+You received this email at your current address because an email change was requested for your account.
+Automated message from noreply@gdguj.org

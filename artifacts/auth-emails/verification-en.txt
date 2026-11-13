@@ -1,0 +1,9 @@
+Verify your email
+
+One more step to join our community. Confirm your email to continue.
+
+Verify email: http://localhost:3000/en/login?preview=1
+
+If you did not request this email, you can safely ignore it. Never share your verification links or codes.
+
+GDG on Campus · University of Jeddah

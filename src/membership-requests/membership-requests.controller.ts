@@ -24,7 +24,7 @@ import {
   MembershipRequestCommitteeParamDto,
 } from './membership-request.dto.js';
 import { MembershipRequestService } from './membership-request.service.js';
-import { VerifiedSupabaseEmailGuard } from './verified-supabase-email.guard.js';
+import { VerifiedEmailGuard } from './verified-email.guard.js';
 
 function memberIdOf(user: AuthenticatedUser) {
   if (!user.memberId) {
@@ -53,7 +53,7 @@ export class MembershipRequestsController {
   }
 
   @Post()
-  @UseGuards(VerifiedSupabaseEmailGuard)
+  @UseGuards(VerifiedEmailGuard)
   async create(
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: CreateMembershipRequestDto,

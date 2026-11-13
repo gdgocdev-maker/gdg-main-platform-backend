@@ -1,0 +1,56 @@
+[
+  {
+    "key": "auth-email-design-v2-verification-en",
+    "kind": "verification",
+    "locale": "en",
+    "to": "abdullahwalid18@gmail.com",
+    "id": "01a1d69b-a386-7726-8144-8cf950d7a66d",
+    "sentAt": "2026-11-13T20:31:26.767Z",
+    "logoUrlSent": "https://gdguj.org/images/black-logo-with-colors.png"
+  },
+  {
+    "key": "auth-email-design-v2-reset-en",
+    "kind": "reset",
+    "locale": "en",
+    "to": "abdullahwalid18@gmail.com",
+    "id": "01a1d69b-a716-74c3-8dd0-d5570717ad66",
+    "sentAt": "2026-11-13T20:31:27.608Z",
+    "logoUrlSent": "https://gdguj.org/images/black-logo-with-colors.png"
+  },
+  {
+    "key": "auth-email-design-v2-welcome-en",
+    "kind": "welcome",
+    "locale": "en",
+    "to": "abdullahwalid18@gmail.com",
+    "id": "01a1d69b-aab2-7ac7-b561-add452ab245c",
+    "sentAt": "2026-11-13T20:31:28.526Z",
+    "logoUrlSent": "https://gdguj.org/images/black-logo-with-colors.png"
+  },
+  {
+    "key": "auth-email-design-v2-email-change-en",
+    "kind": "email-change",
+    "locale": "en",
+    "to": "abdullahwalid18@gmail.com",
+    "id": "01a1d69b-adfb-7b15-9805-61dc85f6a91a",
+    "sentAt": "2026-11-13T20:31:29.387Z",
+    "logoUrlSent": "https://gdguj.org/images/black-logo-with-colors.png"
+  },
+  {
+    "key": "auth-email-design-v2-password-changed-en",
+    "kind": "password-changed",
+    "locale": "en",
+    "to": "abdullahwalid18@gmail.com",
+    "id": "01a1d69b-b155-7445-9339-b76621f60ab1",
+    "sentAt": "2026-11-13T20:31:30.228Z",
+    "logoUrlSent": "https://gdguj.org/images/black-logo-with-colors.png"
+  },
+  {
+    "key": "auth-email-design-v2-verification-ar",
+    "kind": "verification",
+    "locale": "ar",
+    "to": "abdullahwalid18@gmail.com",
+    "id": "01a1d69b-b4ee-73d5-b8a7-0b982cbac8c6",
+    "sentAt": "2026-11-13T20:31:31.144Z",
+    "logoUrlSent": "https://gdguj.org/images/black-logo-with-colors.png"
+  }
+]

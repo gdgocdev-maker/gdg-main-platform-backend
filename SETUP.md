@@ -183,3 +183,11 @@ gdg run
 ```
 
 Open [the frontend](http://localhost:3000). Use `gdg stop` to stop all services and keep your data.
+
+## Better Auth and Resend
+
+Apply committed Prisma migrations before starting this backend. Set `BETTER_AUTH_SECRET` to a new random secret (at least 32 characters), `BETTER_AUTH_URL` and `FRONTEND_URL` to the public frontend origin, and retain the existing Google client credentials. Register `https://<frontend-origin>/api/auth/callback/google` in Google OAuth. The frontend proxies `/api/auth/*` unchanged to NestJS; app endpoints strip the outer `/api` prefix. Configure `TRUST_PROXY_HOPS` for the actual trusted proxy chain.
+
+Set `RESEND_API_KEY` privately and `EMAIL_FROM="GDG on Campus UJ <noreply@gdguj.org>"`. The owner reports `gdguj.org` verified in Resend (Tokyo / ap-northeast-1), including DKIM and send/rsend records. Recommended owner DNS addition: TXT `_dmarc` → `v=DMARC1; p=none;`. Sender remains environment-driven. Never commit `.env` or keys. `EMAIL_TEST_TO` is optional and must be an owner-controlled inbox; without it, skip live mail tests.
+
+Supabase URL/service key remain required only for Storage; existing SMTP configuration remains for non-auth event/membership messages. See [migration plan](docs/auth-migration-plan.md) for import, local checks and coordinated cutover.

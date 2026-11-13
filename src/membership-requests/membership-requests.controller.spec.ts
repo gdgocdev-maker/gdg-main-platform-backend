@@ -2,25 +2,25 @@ import { type INestApplication, ForbiddenException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AuthRequiredGuard } from '../auth/current-user.js';
-import { AuthService } from '../auth/auth.service.js';
+import { BetterAuthService } from '../auth/better-auth.service.js';
 import { MembershipRequestsController } from './membership-requests.controller.js';
 import { MembershipRequestService } from './membership-request.service.js';
-import { VerifiedSupabaseEmailGuard } from './verified-supabase-email.guard.js';
+import { VerifiedEmailGuard } from './verified-email.guard.js';
 
 let app: INestApplication;
 let actor: { personId: number; memberId: number | null } | undefined;
 const list = vi.fn();
 const create = vi.fn();
 const decide = vi.fn();
-const isEmailVerified = vi.fn();
+const session = vi.fn();
 
 beforeAll(async () => {
   const moduleRef = await Test.createTestingModule({
     controllers: [MembershipRequestsController],
     providers: [
       AuthRequiredGuard,
-      VerifiedSupabaseEmailGuard,
-      { provide: AuthService, useValue: { isEmailVerified } },
+      VerifiedEmailGuard,
+      { provide: BetterAuthService, useValue: { session } },
       { provide: MembershipRequestService, useValue: { list, create, decide } },
     ],
   }).compile();
@@ -39,7 +39,7 @@ beforeEach(() => {
   list.mockReset();
   create.mockReset();
   decide.mockReset();
-  isEmailVerified.mockReset().mockResolvedValue(true);
+  session.mockReset().mockResolvedValue({ user: { emailVerified: true } });
 });
 
 describe('membership request access', () => {
@@ -84,14 +84,14 @@ describe('membership request access', () => {
 
   it('requires Supabase to confirm the applicant email before creation', async () => {
     actor = { personId: 12, memberId: null };
-    isEmailVerified.mockResolvedValue(false);
+    session.mockResolvedValue({ user: { emailVerified: false } });
 
     await request(app.getHttpServer())
       .post('/membership-requests')
       .set('Authorization', 'Bearer verified-by-auth-guard')
       .send({})
       .expect(403);
-    expect(isEmailVerified).toHaveBeenCalledWith('verified-by-auth-guard');
+    expect(session).toHaveBeenCalledWith(expect.objectContaining({ authorization: 'Bearer verified-by-auth-guard' }));
     expect(create).not.toHaveBeenCalled();
   });
 

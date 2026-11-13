@@ -1,0 +1,9 @@
+Confirm your email change
+
+Confirm this request to update the email address for your GDG account.
+
+Confirm email change: http://localhost:3000/en/login?preview=1
+
+If you did not request this email, you can safely ignore it. Never share your verification links or codes.
+
+GDG on Campus · University of Jeddah

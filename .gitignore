@@ -42,3 +42,6 @@ Thumbs.db
 prisma/*.db
 prisma/*.db-journal
 /src/generated/prisma
+
+# Local one-send reservation journal (receipts are review artifacts).
+/artifacts/auth-emails/v2/.*.reserved

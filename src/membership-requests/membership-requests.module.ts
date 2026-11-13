@@ -6,12 +6,12 @@ import { CommitteeAccessService } from '../registrations/committee-access.servic
 import { MembershipRequestsController } from './membership-requests.controller.js';
 import { MembershipRequestEmailService } from './membership-request-email.service.js';
 import { MembershipRequestService } from './membership-request.service.js';
-import { VerifiedSupabaseEmailGuard } from './verified-supabase-email.guard.js';
+import { VerifiedEmailGuard } from './verified-email.guard.js';
 
 @Module({
   imports: [AuthModule, PrismaModule, SmtpEmailModule],
   controllers: [MembershipRequestsController],
-  providers: [CommitteeAccessService, MembershipRequestEmailService, MembershipRequestService, VerifiedSupabaseEmailGuard],
+  providers: [CommitteeAccessService, MembershipRequestEmailService, MembershipRequestService, VerifiedEmailGuard],
   exports: [MembershipRequestEmailService],
 })
 export class MembershipRequestsModule {}

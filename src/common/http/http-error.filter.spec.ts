@@ -119,8 +119,8 @@ describe('HttpErrorFilter', () => {
     ...[413, 429, 503].map((status) => ({
       exception: new HttpException(secret, status),
       status,
-      code: status === 429 ? 'TOO_MANY_REQUESTS' : 'HTTP_ERROR',
-      message: status === 429 ? 'Too many requests. Please try again later.' : 'The request could not be completed.',
+      code: status === 429 ? 'TOO_MANY_REQUESTS' : status === 503 ? 'SERVICE_UNAVAILABLE' : 'HTTP_ERROR',
+      message: status === 429 ? 'Too many requests. Please try again later.' : status === 503 ? 'The service is temporarily unavailable.' : 'The request could not be completed.',
     })),
   ])('formats $status as $code', ({ exception, status, code, message }) => {
     h.filter.catch(exception, h.host);
@@ -279,8 +279,8 @@ describe('HttpErrorFilter', () => {
     {
       status: 503,
       expose: true,
-      code: 'HTTP_ERROR',
-      message: 'The request could not be completed.',
+      code: 'SERVICE_UNAVAILABLE',
+      message: 'The service is temporarily unavailable.',
     },
   ])(
     'preserves valid adapter error status $status',
@@ -341,7 +341,7 @@ describe('HttpErrorFilter', () => {
       exception: new HttpException(secret, 503),
       category: 'HTTP_SERVER_ERROR',
       status: 503,
-      code: 'HTTP_ERROR',
+      code: 'SERVICE_UNAVAILABLE',
     },
     {
       exception: Object.assign(new Error(secret), {
@@ -351,7 +351,7 @@ describe('HttpErrorFilter', () => {
       }),
       category: 'ADAPTER_ERROR',
       status: 503,
-      code: 'HTTP_ERROR',
+      code: 'SERVICE_UNAVAILABLE',
     },
   ])(
     'logs only safe fields for $category',
@@ -362,6 +362,8 @@ describe('HttpErrorFilter', () => {
           {
             event: 'http_request_failed',
             category,
+            errorName: exception.name,
+            errorCode: undefined,
             method: 'GET',
             status,
             code,
@@ -381,6 +383,8 @@ describe('HttpErrorFilter', () => {
           {
             event: 'http_request_failed',
             category: 'UNEXPECTED_EXCEPTION',
+            errorName: 'Error',
+            errorCode: undefined,
             method,
             status: 500,
             code: 'INTERNAL_ERROR',
@@ -400,6 +404,8 @@ describe('HttpErrorFilter', () => {
           {
             event: 'http_request_failed',
             category: 'UNEXPECTED_EXCEPTION',
+            errorName: 'Error',
+            errorCode: undefined,
             method: 'OTHER',
             status: 500,
             code: 'INTERNAL_ERROR',

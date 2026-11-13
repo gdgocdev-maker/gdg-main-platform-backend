@@ -4,7 +4,8 @@ import { Test } from '@nestjs/testing';
 import { PrismaPg } from '@prisma/adapter-pg';
 import request from 'supertest';
 import { AuthGuard } from '../src/auth/auth.guard.js';
-import { TokenVerifierService } from '../src/auth/token-verifier.service.js';
+import { BetterAuthService } from '../src/auth/better-auth.service.js';
+import { AuthService } from '../src/auth/auth.service.js';
 import { CommitteeDashboardController } from '../src/committee-dashboard/committee-dashboard.controller.js';
 import { CommitteeDashboardService } from '../src/committee-dashboard/committee-dashboard.service.js';
 import { LeadershipTasksService } from '../src/committee-dashboard/leadership-tasks.service.js';
@@ -76,13 +77,14 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Wallet membership links', () =>
             { provide: LeadershipTasksService, useValue: {} },
             { provide: PrismaService, useValue: tx },
             {
-              provide: TokenVerifierService,
+              provide: BetterAuthService,
               useValue: {
-                verify: async (token: string) => token === 'synthetic-session'
-                  ? { authUserId: actorAuthId, expiresAt: Date.now() / 1000 + 300 }
+                session: async (headers: { authorization?: string }) => headers.authorization === 'Bearer synthetic-session'
+                  ? { user: { id: actorAuthId, emailVerified: true } }
                   : null,
               },
             },
+            { provide: AuthService, useValue: { reconcileVerifiedIdentity: async () => undefined } },
             { provide: APP_GUARD, useClass: AuthGuard },
           ],
         }).compile();
@@ -93,7 +95,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Wallet membership links', () =>
             `/committees/${committeeCode}/members/${target.memberId}/wallet-link`;
           const client = request(app.getHttpServer());
           const auth = 'Bearer synthetic-session';
-          const get = (committeeCode: string) => client.get(path(committeeCode)).set('Authorization', auth);
+          const get = (committeeCode: string) => client.get(path(committeeCode)).set('Authorization', auth).set('Origin', 'http://localhost:3000');
 
           await client.get(path(first.committeeCode)).expect(403);
           const linked = await get(first.committeeCode).expect(200);
