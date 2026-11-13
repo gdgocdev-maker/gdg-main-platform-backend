@@ -1,0 +1,9 @@
+Welcome to GDG on Campus UJ
+
+Your email is verified. Explore, learn and build with our community. Membership applications remain subject to approval.
+
+Explore the community: http://localhost:3000/en/login?preview=1
+
+If you did not request this email, you can safely ignore it. Never share your verification links or codes.
+
+GDG on Campus · University of Jeddah

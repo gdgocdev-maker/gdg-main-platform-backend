@@ -312,3 +312,7 @@ GDG owns member records, committee assignments, the original points ledger, and 
 Use the stable numeric membership number and the exact committee to find the GDG record. Store a separate explicit link to the existing Wallet ID and Profile pair. The numeric number is an identifier. API credentials and server-side authorization enforce permissions. A person can have one stable number and multiple scoped Wallet links. Existing members and points are preserved when a link is saved.
 
 The GDG backend can submit a confirmed guest's issuance or schedule change to the owner's relay, using a dedicated credential and an allowlist. The signer processes the request from the Wallet backend and can continue after the GDG server disconnects. The registration's authoritative decision remains in GDG. See [outbound guest relay API](wallet-guest-relay-openapi.yaml).
+
+## 2026-11-13 — Better Auth / Resend migration authorized
+
+The repository owner requested replacement of Supabase Auth with Better Auth on NestJS using Prisma/Postgres and Resend auth email. This supersedes earlier Supabase credential-ownership and no-local-password-hash decisions for this migration. Application identity/permissions remain Person/Member based. Keep Supabase Storage and non-auth database usage. See [migration plan](auth-migration-plan.md) for audit, base SHAs, implementation status and cutover requirements. Work is local-only; production migration, push and PR are not authorized.
