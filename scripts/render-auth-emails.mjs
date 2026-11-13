@@ -14,15 +14,29 @@ const { chromium } = await import(
 );
 const out = resolve('artifacts/auth-emails/v2');
 await mkdir(out, { recursive: true });
-const fixturePath = resolve(
-  process.env.EMAIL_LOGO_FIXTURE ??
-    '../frontend/public/images/black-logo-with-colors.png',
-);
-const logo = await readFile(fixturePath);
+const fixturePath = process.env.EMAIL_LOGO_FIXTURE
+  ? resolve(process.env.EMAIL_LOGO_FIXTURE)
+  : undefined;
+const response = fixturePath ? undefined : await fetch(EMAIL_BRAND.logo);
+if (
+  response &&
+  (!response.ok ||
+    !response.headers.get('content-type')?.startsWith('image/png'))
+)
+  throw new Error('Hosted logo is not a public PNG');
+const logo = fixturePath
+  ? await readFile(fixturePath)
+  : Buffer.from(await response.arrayBuffer());
 const browser = await chromium.launch({ headless: true });
 const manifest = {
   engine: 'Chromium',
-  logo: { url: EMAIL_BRAND.logo, fixturePath, substituted: true },
+  logo: {
+    url: EMAIL_BRAND.logo,
+    fixturePath,
+    substituted: Boolean(fixturePath),
+    hostedStatus: response?.status,
+    cachedForScreenshots: true,
+  },
   renders: [],
 };
 try {

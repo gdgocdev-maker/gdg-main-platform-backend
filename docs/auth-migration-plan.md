@@ -163,18 +163,20 @@ password changes. There are no API/schema/migration changes in the email redesig
 
 Current backend lint/typecheck/build pass; 271 Vitest tests and 15 Node tests pass.
 Lint has four pre-existing warnings. All 40 desktop/mobile light/dark screenshots
-pass layout, asset-fixture decode and contrast checks: minimum contrast 5.09:1;
-maximum HTML 8,505 bytes. Artifacts and the six accepted Resend message IDs are in
+pass layout, hosted-asset decode and contrast checks: minimum contrast 5.09:1;
+maximum HTML 8,611 bytes. Artifacts and the six accepted Resend message IDs are in
 `artifacts/auth-emails/v2/` (see `manifest.json` and `resend-receipts.json`). Exactly
 one of each template in EN plus AR verification went only to the owner-authorized
 inbox. These contain synthetic preview links, not usable authentication tokens.
 Resend acceptance does not establish inbox delivery or client rendering.
 
-Public website/PNG availability remains a cutover requirement: `gdguj.org` did not
-resolve in this environment. Screenshots substituted the exact sibling frontend PNG
-for its absolute production URL. Restore public DNS/HTTPS asset serving before
-production emails. Gmail/Outlook/Apple Mail inbox checks remain owner validation;
-Chromium screenshots are not native mail-client certification.
+Public website DNS remains a cutover requirement: `gdguj.org` did not resolve here.
+Publishing the frontend made its exact PNG publicly accessible, so final templates
+use the immutable frontend raw asset URL, verified HTTP 200 image/png. Final renders
+cache those fetched bytes rather than substitute a local fixture. The six samples
+were already accepted using the original production-domain logo URL; that URL is
+recorded in receipts and no duplicates were sent. Native Gmail/Outlook/Apple Mail
+inbox checks remain owner validation; Chromium does not certify mail-client engines.
 
 Pre-push gitleaks scanned full histories in both repositories with redaction.
 Frontend: zero findings. Backend: two reviewed false positives only (synthetic

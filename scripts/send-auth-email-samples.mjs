@@ -4,6 +4,7 @@ import { parse } from 'dotenv';
 import { Resend } from 'resend';
 import {
   AUTH_EMAIL_KINDS,
+  EMAIL_BRAND,
   renderAuthEmail,
 } from '../dist/auth/email/auth-email.js';
 const env = parse(await readFile('.env', 'utf8'));
@@ -59,6 +60,7 @@ for (const [kind, locale] of [
     to,
     id: data.id,
     sentAt: new Date().toISOString(),
+    logoUrlSent: EMAIL_BRAND.logo,
   });
   await writeFile(receiptPath, JSON.stringify(receipts, null, 2) + '\n');
   console.log(`${kind}/${locale}: ${data.id}`);

@@ -9,7 +9,7 @@ export type AuthEmailKind = (typeof AUTH_EMAIL_KINDS)[number];
 export type AuthLocale = 'ar' | 'en';
 
 export const EMAIL_BRAND = {
-  logo: 'https://gdguj.org/images/black-logo-with-colors.png',
+  logo: 'https://raw.githubusercontent.com/gdgocdev-maker/gdg-main-platform-frontend/d2bf9bc57d98caa73356c7405eab1710de08da90/public/images/black-logo-with-colors.png',
   linkedin:
     'https://www.linkedin.com/company/google-developer-student-club-uj/',
   x: 'https://x.com/gdguoj?s=11',

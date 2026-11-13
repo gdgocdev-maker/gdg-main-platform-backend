@@ -19,13 +19,18 @@ dark mode. Reserve at least 24px clear space around the image (a conservative em
 layout decision, not a quoted Google measurement). Use the provided lockup rather
 than re-typesetting Google branding.
 
-The live `gdguj.org` domain did not resolve during this review. Its existing public
-PNG path is the production asset contract: https://gdguj.org/images/black-logo-with-colors.png.
-No base64, SVG, private GitHub URL, or remote font dependency is embedded in email.
-The render harness intercepts exactly that URL with the matching local frontend PNG;
-this permits visual review but does not establish public asset availability. Before
-deployment, restore DNS and confirm this URL returns a public image/png over HTTPS.
-A missing image still leaves readable chapter identification in the footer and alt.
+The live `gdguj.org` domain did not resolve during review. Once the frontend branch
+was published, its exact PNG became publicly available (verified HTTP 200 image/png).
+Final templates use the immutable published frontend asset:
+
+https://raw.githubusercontent.com/gdgocdev-maker/gdg-main-platform-frontend/d2bf9bc57d98caa73356c7405eab1710de08da90/public/images/black-logo-with-colors.png
+
+No base64, SVG, private URL, or remote font dependency is embedded. The render
+harness fetches and validates this hosted PNG once, then serves the returned bytes
+from cache to each screenshot. An explicit `EMAIL_LOGO_FIXTURE` enables offline
+fixture rendering and is recorded as a substitution. Restore website DNS for live
+account-action links before deployment. The six earlier live samples used the
+original production-domain logo URL; receipts record that URL. They were not resent.
 
 ## Palette and type
 
@@ -103,8 +108,8 @@ needs a real inbox review; browser renders cannot certify those engines.
 
 Run build first, then `node scripts/render-auth-emails.mjs`. Install Playwright in
 an external tooling directory and set `PLAYWRIGHT_MODULE` to its index.mjs if it is
-not available in this repository. The renderer uses `EMAIL_LOGO_FIXTURE` or the
-sibling frontend's PNG, records that substitution in `manifest.json`, and generates
+not available in this repository. The renderer validates and caches the hosted PNG (or an explicit offline
+`EMAIL_LOGO_FIXTURE`), records the source in `manifest.json`, and generates
 40 full-page PNGs: five templates × two locales × desktop/mobile × light/dark.
 It also writes ten HTML and ten text fixtures. Widths: 800 and 390 CSS px; DPR 1.
 It checks asset decode, horizontal overflow, 600px card bound, CTA visibility and
@@ -118,8 +123,8 @@ persistent local reservation/receipt journal, and sends only five EN samples plu
 AR verification. Preview links are harmless example URLs with no real auth tokens.
 
 Final verification: 40/40 renders passed, minimum computed contrast 5.09:1 and largest
-HTML 8,505 bytes. The samples were accepted by Resend; message IDs are recorded in
+HTML 8,611 bytes. The samples were accepted by Resend; message IDs are recorded in
 `artifacts/auth-emails/v2/resend-receipts.json`. Backend lint, typecheck, 271 Vitest
 and 15 Node tests, and build passed. Frontend typecheck, three routing tests and
 webpack production build passed; full lint still has six existing errors and 15
-warnings. Native mail-client rendering and public logo availability remain unverified.
+warnings. Native mail-client rendering remains unverified; the final hosted logo is HTTP-checked.
