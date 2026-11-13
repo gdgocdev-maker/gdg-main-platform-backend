@@ -18,7 +18,7 @@
     "lint": "oxlint src/ test/ scripts/",
     "typecheck": "pnpm prisma:generate && tsc --noEmit",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
-    "test": "node --test test/schema-migrations.test.mjs test/development-seed.test.mjs && pnpm prisma:generate && vitest run",
+    "test": "node --test test/schema-migrations.test.mjs test/development-seed.test.mjs test/auth-import.test.mjs && pnpm prisma:generate && vitest run",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
@@ -33,7 +33,9 @@
     "test:startup:local": "node test/startup-command.test.mjs && node test/run-schema-tests.mjs --startup",
     "test:performance:local": "node test/run-schema-tests.mjs --performance",
     "seed:dev": "node scripts/seed-development.mjs",
-    "test:seed:local": "node test/run-schema-tests.mjs --seed"
+    "test:seed:local": "node test/run-schema-tests.mjs --seed",
+    "test:auth:local": "pnpm build && node --test test/better-auth-local.test.mjs test/better-auth-security-local.test.mjs",
+    "auth:import": "node scripts/import-supabase-auth.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

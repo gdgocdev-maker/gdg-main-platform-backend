@@ -14,6 +14,7 @@ export function createBetterAuth(prisma: PrismaService, email: ResendAuthEmailSe
   if (!secret || secret.length < 32) throw new Error('BETTER_AUTH_SECRET must contain at least 32 characters');
   return betterAuth({
     appName: 'GDG on Campus UJ',
+    logger: { disabled: true }, // Provider diagnostics can contain OAuth state or email addresses.
     plugins: [openAPI({ disableDefaultReference: true })],
     baseURL: process.env.BETTER_AUTH_URL ?? origin,
     basePath: '/api/auth',
@@ -46,6 +47,9 @@ export function createBetterAuth(prisma: PrismaService, email: ResendAuthEmailSe
         const owner = await prisma.person.findFirst({ where: { emailPersonal: { equals: user.email, mode: 'insensitive' } }, select: { authUserId: true } });
         const current = await prisma.authUser.findUnique({ where: { email: user.email.toLowerCase() }, select: { id: true } });
         if (owner && owner.authUserId !== current?.id) throw new APIError('CONFLICT', { message: 'Email address is already associated with an application profile.' });
+      }, after: async (user) => {
+        // Recovery links issued to a previous address must not survive an email change.
+        await prisma.authVerification.deleteMany({ where: { value: user.id } });
       } } },
     },
     emailAndPassword: {
@@ -53,7 +57,19 @@ export function createBetterAuth(prisma: PrismaService, email: ResendAuthEmailSe
       requireEmailVerification: true,
       minPasswordLength: 8,
       revokeSessionsOnPasswordReset: true,
-      password: { hash: hashAuthPassword, verify: verifyAuthPassword },
+      onPasswordReset: async ({ user }) => {
+        // A successfully consumed recovery token proves ownership of the destination inbox.
+        await prisma.authUser.updateMany({ where: { id: user.id, email: user.email }, data: { emailVerified: true } });
+      },
+      password: { hash: hashAuthPassword, verify: async (input) => {
+        const valid = await verifyAuthPassword(input);
+        if (valid && Buffer.byteLength(input.password, 'utf8') <= 72 && /^\$2[aby]\$/.test(input.hash)) {
+          const upgraded = await hashAuthPassword(input.password);
+          // Compare-and-swap avoids overwriting a concurrent password reset.
+          await prisma.authAccount.updateMany({ where: { providerId: 'credential', password: input.hash }, data: { password: upgraded } });
+        }
+        return valid;
+      } },
       sendResetPassword: async ({ user, url }) => {
         await email.send({ to: user.email, kind: 'reset', locale: ('locale' in user && user.locale === 'ar') ? 'ar' : 'en', url });
       },

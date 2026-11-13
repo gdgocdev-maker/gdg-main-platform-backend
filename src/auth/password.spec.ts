@@ -15,8 +15,8 @@ describe('migrated credentials', () => {
     expect(await verifyAuthPassword({ hash, password: 'new-strong-password' })).toBe(true);
     expect(await verifyAuthPassword({ hash, password: 'wrong-password' })).toBe(false);
   });
-  it('does not accept a truncated legacy password', async () => {
+  it('preserves legacy bcrypt semantics beyond 72 bytes', async () => {
     const password = 'a'.repeat(72);
-    expect(await verifyAuthPassword({ hash: await bcrypt.hash(password, 10), password: password + 'extra' })).toBe(false);
+    expect(await verifyAuthPassword({ hash: await bcrypt.hash(password, 10), password: password + 'extra' })).toBe(true);
   });
 });

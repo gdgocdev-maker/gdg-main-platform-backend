@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import type { RequestSetupLinkDto } from './setup-password.dto.js';
 import { BadRequestException, ConflictException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -58,6 +60,19 @@ export class AuthService {
     return { nextStep: person.authUserId ? 'PASSWORD_REQUIRED' : 'PASSWORD_SETUP_REQUIRED' };
   }
 
+  async requestPasswordReset({ email, locale = 'en' }: RequestSetupLinkDto) {
+    const normalized = email.trim().toLowerCase();
+    const person = await this.prisma.person.findFirst({ where: { emailPersonal: { equals: normalized, mode: 'insensitive' }, isActive: true } });
+    // Existing application-only people can claim their account by proving inbox ownership.
+    // Creating an unverified auth row grants no session, person link, or permissions.
+    if (person && !person.authUserId) {
+      await this.prisma.authUser.upsert({ where: { email: normalized },
+        create: { id: randomUUID(), email: normalized, name: person.fullName, emailVerified: false, locale }, update: {} });
+    }
+    await this.better.auth.api.requestPasswordReset({ body: { email: normalized,
+      redirectTo: `${process.env.FRONTEND_URL ?? 'http://localhost:3000'}/${locale}/reset-password` } });
+  }
+
   async signup(input: SignupDto) {
     const { fullName, email, universityEmail, password, registrationType, committees = [], requestedGlobalRoles = [], locale = 'en' } = input;
     const applicationData = normalizeBranch(input.applicationData);
@@ -90,6 +105,10 @@ export class AuthService {
 
   async reconcileVerifiedIdentity(identity: { id: string; email: string; emailVerified: boolean }) {
     if (!identity.emailVerified) return;
+    await this.prisma.person.updateMany({
+      where: { authUserId: null, emailPersonal: { equals: identity.email, mode: 'insensitive' }, isActive: true },
+      data: { authUserId: identity.id, emailPersonalVerifiedAt: new Date() },
+    });
     const pending = await this.prisma.signupVerification.findUnique({ where: { authUserId: identity.id } });
     if (pending && pending.expiresAt > new Date() && !pending.verifiedAt) {
       if (pending.emailPersonal !== identity.email.toLowerCase()) throw new UnauthorizedException();

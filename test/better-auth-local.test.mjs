@@ -58,6 +58,10 @@ test('Prisma auth: verify, sign in, reset, and imported bcrypt', async () => {
     await importPlan(prisma, plan, true);
     await importPlan(prisma, plan, true);
     assert.equal((await call('/sign-in/email', { email: importedEmail, password: 'legacy-password-123' })).status, 200);
+    const upgraded = await prisma.authAccount.findUniqueOrThrow({ where: { providerId_accountId: { providerId: 'credential', accountId: importedId } } });
+    assert.doesNotMatch(upgraded.password, /^\$2/);
+    await importPlan(prisma, plan, true);
+    assert.equal((await prisma.authAccount.findUniqueOrThrow({ where: { id: upgraded.id } })).password, upgraded.password);
     assert.equal((await call('/sign-in/email', { email: importedEmail, password: 'wrong-password' })).status, 429);
   } finally {
     const person = await prisma.person.findFirst({ where: { emailPersonal: email } });

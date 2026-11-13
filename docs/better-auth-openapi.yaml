@@ -106,6 +106,25 @@ paths:
         '403': { description: Invalid mutation origin }
         '409': { description: Conflicting application identity }
         '429': { description: Rate limit exceeded }
+  /account/request-password-reset:
+    post:
+      summary: Send recovery or first-time account setup to an existing personal email
+      description: Creates only an unverified auth identity for an unlinked active Person. The Person link is established only after inbox verification. Unknown email gets the same success response.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email, maxLength: 255 }
+                locale: { type: string, enum: [en, ar], default: en }
+      responses:
+        '200': { description: Generic success, with null data in the GDG envelope }
+        '400': { description: Invalid email or locale }
+        '429': { description: Rate limit exceeded }
+        '503': { description: Mail provider unavailable }
 components:
   securitySchemes:
     session:

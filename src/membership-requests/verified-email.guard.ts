@@ -13,7 +13,7 @@ interface AuthRequest {
 }
 
 @Injectable()
-export class VerifiedSupabaseEmailGuard implements CanActivate {
+export class VerifiedEmailGuard implements CanActivate {
   constructor(@Inject(BetterAuthService) private readonly auth: BetterAuthService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {

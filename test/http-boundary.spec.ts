@@ -1,3 +1,4 @@
+import { BetterAuthService } from '../src/auth/better-auth.service.js';
 import {
   BadRequestException,
   Body,
@@ -118,6 +119,7 @@ describe('HTTP error boundary', () => {
       imports: [AppModule],
       controllers: [HttpBoundaryFixtures],
     })
+      .overrideProvider(BetterAuthService).useValue({ session: async () => null })
       .overrideProvider(PrismaService)
       .useValue({})
       .overrideProvider(ConfigService)

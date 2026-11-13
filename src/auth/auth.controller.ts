@@ -5,6 +5,7 @@ import type { RequestUser } from './auth.guard.js';
 import { AuthService } from './auth.service.js';
 import { BetterAuthService } from './better-auth.service.js';
 import { CheckEmailDto } from './check-email.dto.js';
+import { RequestSetupLinkDto } from './setup-password.dto.js';
 import { SignupDto } from './signup.dto.js';
 import { AuthRateLimit } from './auth-rate-limit.guard.js';
 import { UpdateBioDto } from './update-bio.dto.js';
@@ -23,6 +24,14 @@ export class AuthController {
   @Post('account/signup')
   @AuthRateLimit({ scope: 'signup', dimension: 'ip', limit: 20, windowSeconds: 3600 }, { scope: 'signup', dimension: 'email', limit: 5, windowSeconds: 86400 })
   async signup(@Body() body: SignupDto) { return apiSuccess(await this.auth.signup(body)); }
+
+  @Post('account/request-password-reset')
+  @HttpCode(200)
+  @AuthRateLimit({ scope: 'reset-request', dimension: 'ip', limit: 20, windowSeconds: 3600 }, { scope: 'reset-request', dimension: 'email', limit: 3, windowSeconds: 3600 })
+  async requestPasswordReset(@Body() body: RequestSetupLinkDto) {
+    await this.auth.requestPasswordReset(body);
+    return apiSuccess(null, 'If an eligible account exists, a password link has been sent.');
+  }
 
   @Get('account/profile-status')
   async profileStatus(@Req() request: Request) {
