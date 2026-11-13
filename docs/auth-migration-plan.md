@@ -131,3 +131,9 @@ The full-platform overlay now enables the frontend API client, proxies same-orig
 ## Review correction: verified Google linking
 
 Removed Google from Better Auth's `trustedProviders` (explicit empty list). Provider trust bypassed the provider's `email_verified` claim when linking an existing verified local user. The regression first presents a validly signed Google identity with `email_verified: false` and asserts error redirect, no session and no attached Google account; the same identity with `email_verified: true` still links successfully. All four local auth integration tests pass after the fix. Google signup locale/welcome review work remains in progress.
+
+## Review correction: Google locale and welcome
+
+Frontend Google sign-in now includes normalized EN/AR locale in OAuth state. Backend creates new Google users with that locale and uses a persisted atomic welcome-delivery claim plus a Resend idempotency key. Welcome runs for verified sessions as well as email verification, and repeat sign-ins do not resend it. Failed delivery releases the claim for a later login retry. Migration `20261113230000_auth_welcome_delivery` adds the nullable marker (45 migrations total). Local recording-only integration tests now pass 6/6, including both AR and EN Google signup and repeated login. No additional real email was sent during review fixes.
+
+Docker/Colima and standalone Compose became available during final review. The merged Compose configuration validates with `docker-compose ... config --quiet`; actual runtime verification is in progress while Colima initializes. Earlier statements that Docker was absent describe the initial validation environment.

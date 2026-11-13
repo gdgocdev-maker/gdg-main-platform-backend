@@ -17,7 +17,7 @@ async function fixture() {
   const auth = createBetterAuth(prisma, { send: async message => sent.push(message) });
   const service = new AuthService(prisma, { auth });
   const email = `${randomUUID()}@example.test`;
-  const ip = `fd00::${randomUUID().slice(0, 4)}:${randomUUID().slice(0, 4)}`;
+  const ip = `2001:db8:${randomUUID().slice(0, 4)}:${randomUUID().slice(0, 4)}::1`;
   const call = (path, body, cookie = '') => auth.handler(new Request(`http://localhost:3000/api/auth${path}`, { method: body ? 'POST' : 'GET', headers: { origin: 'http://localhost:3000', 'content-type': 'application/json', 'x-gdg-client-ip': ip, cookie }, ...(body ? { body: JSON.stringify(body) } : {}) }));
   const clean = async () => {
     const users = await prisma.authUser.findMany({ where: { OR: [{ email }, { email: `changed-${email}` }] } });
@@ -131,4 +131,41 @@ test('email change confirms both addresses, synchronizes Person, and invalidates
     assert.equal((await f.prisma.person.findUniqueOrThrow({ where: { personId: person.personId } })).emailPersonal, changedEmail);
     assert.equal((await f.call('/reset-password', { token: oldResetToken, newPassword: 'old-address-attack' })).status, 400);
   } finally { await f.clean(); }
+});
+
+for (const locale of ['ar', 'en']) test(`Google signup persists ${locale} locale and welcomes exactly once across sign-ins`, async () => {
+  const f = await fixture(); const originalFetch = globalThis.fetch;
+  try {
+    const { privateKey, publicKey } = await generateKeyPair('RS256');
+    const jwk = { ...await exportJWK(publicKey), kid: `locale-${locale}`, alg: 'RS256', use: 'sig' };
+    const idToken = await new SignJWT({ email: f.email, email_verified: true, name: 'Synthetic localized Google user' })
+      .setProtectedHeader({ alg: 'RS256', kid: jwk.kid }).setIssuer('https://accounts.google.com')
+      .setAudience('synthetic-client').setSubject(`locale-${f.email}`).setIssuedAt().setExpirationTime('5m').sign(privateKey);
+    globalThis.fetch = async input => {
+      const url = typeof input === 'string' ? input : input.url ?? input.toString();
+      if (url === 'https://oauth2.googleapis.com/token') return Response.json({ access_token: 'synthetic-access', token_type: 'Bearer', expires_in: 3600, id_token: idToken });
+      if (url === 'https://www.googleapis.com/oauth2/v3/certs') return Response.json({ keys: [jwk] });
+      throw new Error('Unexpected external request in localized OAuth test');
+    };
+    const login = async () => {
+      const begin = await f.call('/sign-in/social', { provider: 'google', additionalData: { locale }, callbackURL: `http://localhost:3000/${locale}/auth/callback` });
+      assert.equal(begin.status, 200);
+      const state = new URL((await begin.json()).url).searchParams.get('state');
+      const callback = await f.call(`/callback/google?code=synthetic&state=${encodeURIComponent(state)}`, undefined, cookies(begin));
+      assert.equal(callback.headers.get('location'), `http://localhost:3000/${locale}/auth/callback`);
+      const session = await (await f.call('/get-session', undefined, cookies(callback))).json();
+      assert.equal(session.user.locale, locale);
+      return session.user.id;
+    };
+    const id = await login();
+    const persisted = await f.prisma.authUser.findUniqueOrThrow({ where: { id } });
+    assert.equal(persisted.locale, locale);
+    assert.ok(persisted.welcomeSentAt);
+    assert.equal(f.sent.filter(message => message.kind === 'welcome').length, 1);
+    assert.equal(f.sent[0].locale, locale);
+    assert.equal(f.sent[0].url, `http://localhost:3000/${locale}/login`);
+    assert.equal(f.sent[0].idempotencyKey, `auth-welcome-${id}`);
+    assert.equal(await login(), id);
+    assert.equal(f.sent.filter(message => message.kind === 'welcome').length, 1);
+  } finally { globalThis.fetch = originalFetch; await f.clean(); }
 });

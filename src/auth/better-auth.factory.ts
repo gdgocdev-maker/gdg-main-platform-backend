@@ -1,5 +1,5 @@
 import { betterAuth } from 'better-auth';
-import { APIError } from 'better-auth/api';
+import { APIError, createAuthMiddleware, getOAuthState } from 'better-auth/api';
 import { openAPI } from 'better-auth/plugins';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { randomUUID } from 'node:crypto';
@@ -12,6 +12,20 @@ export function createBetterAuth(prisma: PrismaService, email: ResendAuthEmailSe
   const origin = process.env.FRONTEND_URL ?? 'http://localhost:3000';
   const secret = process.env.BETTER_AUTH_SECRET;
   if (!secret || secret.length < 32) throw new Error('BETTER_AUTH_SECRET must contain at least 32 characters');
+  const sendWelcomeOnce = async (user: { id: string; emailVerified: boolean }) => {
+    if (!user.emailVerified) return;
+    const claimedAt = new Date();
+    const claimed = await prisma.authUser.updateMany({ where: { id: user.id, emailVerified: true, welcomeSentAt: null }, data: { welcomeSentAt: claimedAt } });
+    if (!claimed.count) return;
+    try {
+      const current = await prisma.authUser.findUniqueOrThrow({ where: { id: user.id } });
+      const locale = current.locale === 'ar' ? 'ar' : 'en';
+      await email.send({ to: current.email, kind: 'welcome', locale, url: `${origin}/${locale}/login`, idempotencyKey: `auth-welcome-${user.id}` });
+    } catch (error) {
+      await prisma.authUser.updateMany({ where: { id: user.id, welcomeSentAt: claimedAt }, data: { welcomeSentAt: null } });
+      throw error;
+    }
+  };
   return betterAuth({
     appName: 'GDG on Campus UJ',
     logger: { disabled: true }, // Provider diagnostics can contain OAuth state or email addresses.
@@ -24,7 +38,7 @@ export function createBetterAuth(prisma: PrismaService, email: ResendAuthEmailSe
     advanced: { ipAddress: { ipAddressHeaders: ['x-gdg-client-ip'] }, database: { generateId: () => randomUUID() }, defaultCookieAttributes: { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' } },
     user: {
       modelName: 'AuthUser',
-      additionalFields: { locale: { type: 'string', required: false, defaultValue: 'en' } },
+      additionalFields: { locale: { type: 'string', required: false, defaultValue: 'en' }, welcomeSentAt: { type: 'date', required: false, input: false, returned: false } },
       changeEmail: {
         enabled: true,
         sendChangeEmailConfirmation: async ({ user, url }) => {
@@ -41,8 +55,15 @@ export function createBetterAuth(prisma: PrismaService, email: ResendAuthEmailSe
       '/request-password-reset': { window: 60, max: 3 },
       '/send-verification-email': { window: 60, max: 2 },
     } },
+    hooks: { after: createAuthMiddleware(async (ctx) => {
+      if (ctx.context.newSession?.user) await sendWelcomeOnce(ctx.context.newSession.user);
+    }) },
     databaseHooks: {
-      user: { update: { before: async (user) => {
+      user: { create: { before: async (user) => {
+        const state = await getOAuthState();
+        // Locale is presentation-only client input, carried through validated OAuth state.
+        if (state) return { data: { ...user, locale: state.locale === 'ar' ? 'ar' : 'en' } };
+      } }, update: { before: async (user) => {
         if (!user.email) return;
         const owner = await prisma.person.findFirst({ where: { emailPersonal: { equals: user.email, mode: 'insensitive' } }, select: { authUserId: true } });
         const current = await prisma.authUser.findUnique({ where: { email: user.email.toLowerCase() }, select: { id: true } });
@@ -81,9 +102,7 @@ export function createBetterAuth(prisma: PrismaService, email: ResendAuthEmailSe
       sendVerificationEmail: async ({ user, url }) => {
         await email.send({ to: user.email, kind: 'verification', locale: ('locale' in user && user.locale === 'ar') ? 'ar' : 'en', url });
       },
-      afterEmailVerification: async user => {
-        await email.send({ to: user.email, kind: 'welcome', locale: ('locale' in user && user.locale === 'ar') ? 'ar' : 'en', url: `${origin}/${('locale' in user && user.locale === 'ar') ? 'ar' : 'en'}/login` });
-      },
+      afterEmailVerification: sendWelcomeOnce,
     },
     socialProviders: process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET ? {
       google: { clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET },

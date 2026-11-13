@@ -7,12 +7,12 @@ import { renderAuthEmail, type AuthEmailKind, type AuthLocale } from './auth-ema
 export class ResendAuthEmailService {
   constructor(@Inject(ConfigService) private readonly config: ConfigService) {}
 
-  async send(input: { to: string; kind: AuthEmailKind; locale: AuthLocale; url: string; code?: string }) {
+  async send(input: { to: string; kind: AuthEmailKind; locale: AuthLocale; url: string; code?: string; idempotencyKey?: string }) {
     const key = this.config.getOrThrow<string>('RESEND_API_KEY');
     const from = this.config.getOrThrow<string>('EMAIL_FROM');
     const rendered = renderAuthEmail({ ...input, frontendOrigin: this.config.getOrThrow<string>('FRONTEND_URL') });
     try {
-      const { data, error } = await new Resend(key).emails.send({ from, to: input.to, ...rendered });
+      const { data, error } = await new Resend(key).emails.send({ from, to: input.to, ...rendered }, input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined);
       if (error) throw new Error('Delivery rejected');
       return data?.id;
     } catch {

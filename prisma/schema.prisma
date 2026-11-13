@@ -716,6 +716,7 @@ model AuthUser {
   emailVerified Boolean   @default(false)
   image         String?
   locale        String    @default("en")
+  welcomeSentAt DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   sessions      AuthSession[]
