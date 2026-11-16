@@ -1,4 +1,4 @@
-﻿name: Build and deploy backend image
+name: Build and deploy backend image
 
 on:
   push:
@@ -43,12 +43,20 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: Trigger Dokploy deployment (optional)
+      - name: Trigger Dokploy deployment
         env:
-          DOKPLOY_WEBHOOK_URL: ${{ secrets.DOKPLOY_BACKEND_WEBHOOK_URL }}
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          DOKPLOY_APPLICATION_ID: ${{ secrets.DOKPLOY_BACKEND_APPLICATION_ID }}
         run: |
-          if [ -n "$DOKPLOY_WEBHOOK_URL" ]; then
-            curl --fail --silent --show-error --request POST "$DOKPLOY_WEBHOOK_URL"
-          else
-            echo "DOKPLOY_BACKEND_WEBHOOK_URL is not set; image was pushed, deploy it from Dokploy."
-          fi
+          set -euo pipefail
+          : "${DOKPLOY_URL:?Add DOKPLOY_URL to GitHub repository secrets}"
+          : "${DOKPLOY_API_KEY:?Add DOKPLOY_API_KEY to GitHub repository secrets}"
+          : "${DOKPLOY_APPLICATION_ID:?Add DOKPLOY_BACKEND_APPLICATION_ID to GitHub repository secrets}"
+
+          curl --fail-with-body --silent --show-error \
+            --request POST "${DOKPLOY_URL%/}/api/application.deploy" \
+            --header "accept: application/json" \
+            --header "Content-Type: application/json" \
+            --header "x-api-key: ${DOKPLOY_API_KEY}" \
+            --data "{\"applicationId\":\"${DOKPLOY_APPLICATION_ID}\"}"
