@@ -46,4 +46,13 @@ export class DeveloperCommitteesDashboardController {
   ) {
     return apiSuccess(await this.dashboard.assignDeveloperCommitteeMember(request.user, body));
   }
+
+  @Delete('committees/:committeeCode/members/:memberId')
+  async removeCommitteeLeader(
+    @Req() request: { user?: RequestUser },
+    @Param('committeeCode') committeeCode: string,
+    @Param('memberId', ParseIntPipe) memberId: number,
+  ) {
+    return apiSuccess(await this.dashboard.removeDeveloperCommitteeLeader(request.user, committeeCode, memberId));
+  }
 }

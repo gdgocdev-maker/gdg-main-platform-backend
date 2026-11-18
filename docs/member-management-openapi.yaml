@@ -50,6 +50,28 @@ paths:
         '403': { description: Caller cannot add members to this committee. }
         '404': { description: No existing active platform account uses this login email. }
         '409': { description: Account or committee membership is inactive or already exists. }
+  /committees/{committeeCode}/members/{memberId}:
+    delete:
+      operationId: removeCommitteeMember
+      summary: Remove a member and committee-scoped records from the caller's committee
+      description: Requires members.manage permission scoped to the requested committee (Leader or Co-Leader). Removes that committee membership, its point entries, committee tasks assigned to or created by the member, and its wallet link and barcode aliases. The account and memberships in other committees are preserved. Self-removal is rejected.
+      security: [{ bearerAuth: [] }, { accessCookie: [] }]
+      parameters:
+        - name: committeeCode
+          in: path
+          required: true
+          schema: { type: string }
+        - name: memberId
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200': { description: Committee membership and scoped records removed. }
+        '400': { description: Unsupported committee. }
+        '401': { description: Authentication required. }
+        '403': { description: Caller lacks committee-scoped member management permission. }
+        '404': { description: Active membership not found. }
+        '409': { description: Caller attempted to remove their own membership. }
   /developer-committees/dashboard:
     get:
       operationId: getDeveloperCommitteesDashboard
@@ -118,6 +140,28 @@ paths:
         '403': { description: Caller lacks developer committee leadership permission. }
         '404': { description: No existing active platform account uses this login email. }
         '409': { description: Account or membership is inactive or already assigned. }
+  /developer-committees/committees/{committeeCode}/members/{memberId}:
+    delete:
+      operationId: removeDeveloperCommitteeLeader
+      summary: Remove a leader or co-leader from a developer committee
+      description: Requires developer_committees.members.assign, granted to the Developer Committees Leader. The target must be a Leader or Co-Leader in one of the six children of DEV. Removes only that committee membership and its scoped point entries, tasks, and wallet link; other committee memberships and the account are preserved. Self-removal is rejected.
+      security: [{ bearerAuth: [] }, { accessCookie: [] }]
+      parameters:
+        - name: committeeCode
+          in: path
+          required: true
+          schema: { type: string }
+        - name: memberId
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200': { description: Developer committee leadership membership and scoped records removed. }
+        '400': { description: Committee is not a child of DEV. }
+        '401': { description: Authentication required. }
+        '403': { description: Caller lacks Developer Committees Leader permission. }
+        '404': { description: Active committee leader membership not found. }
+        '409': { description: Caller attempted to remove their own membership. }
   /club-leadership/members:
     post:
       operationId: assignClubManagedPerson

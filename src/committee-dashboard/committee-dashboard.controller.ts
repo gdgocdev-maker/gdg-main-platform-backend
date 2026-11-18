@@ -55,6 +55,15 @@ export class CommitteeDashboardController {
     return apiSuccess(await this.dashboard.addMember(request.user, committeeCode, body));
   }
 
+  @Delete('members/:memberId')
+  async removeCommitteeMember(
+    @Req() request: { user?: RequestUser },
+    @Param('committeeCode') committeeCode: string,
+    @Param('memberId', ParseIntPipe) memberId: number,
+  ) {
+    return apiSuccess(await this.dashboard.removeCommitteeMember(request.user, committeeCode, memberId));
+  }
+
   @Get('managed-events')
   async getManagedEvents(@Req() request: { user?: RequestUser }, @Param('committeeCode') committeeCode: string) {
     this.assertProjectManagementRoute(committeeCode);

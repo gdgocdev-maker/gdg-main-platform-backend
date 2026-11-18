@@ -578,6 +578,77 @@ export class CommitteeDashboardService {
     return assigned.result;
   }
 
+  async removeCommitteeMember(user: RequestUser | undefined, committeeCode: string, targetMemberId: number) {
+    const { committee, memberId } = await this.requireMembership(user, committeeCode);
+    await this.requirePermission(memberId, MEMBERS_PERMISSION, committee.committeeId);
+    if (!MEMBER_ASSIGNABLE_COMMITTEE_CODES.has(committee.committeeCode)) {
+      throw new ForbiddenException('Members can only be removed through the approved committee workspaces.');
+    }
+    return this.prisma.$transaction(async (transaction) => {
+      if (targetMemberId === memberId) throw new ConflictException('You cannot remove your own committee membership.');
+      const membership = await transaction.memberCommittee.findUnique({
+        where: { memberId_committeeId: { memberId: targetMemberId, committeeId: committee.committeeId } },
+        include: { member: { include: { person: true } } },
+      });
+      if (!membership || !membership.member.isActive || !membership.member.person.isActive) {
+        throw new NotFoundException('The member is not active in this committee.');
+      }
+      await this.deleteCommitteeMembershipData(transaction, targetMemberId, committee.committeeId, membership.id);
+      return {
+        memberId: String(targetMemberId),
+        name: membership.member.person.fullName,
+        committee: { code: committee.committeeCode, name: committee.committeeName, role: membership.role },
+        committeeMembershipRemoved: true,
+      };
+    });
+  }
+
+  async removeDeveloperCommitteeLeader(user: RequestUser | undefined, committeeCode: string, targetMemberId: number) {
+    if (!user?.memberId || !(await this.access.hasGlobalPermission(user.memberId, 'developer_committees.members.assign'))) {
+      throw new ForbiddenException();
+    }
+    const code = committeeCode.trim().toUpperCase();
+    const committee = await this.prisma.committee.findUnique({
+      where: { committeeCode: code },
+      include: { parent: { select: { committeeCode: true } } },
+    });
+    if (!committee || committee.parent?.committeeCode !== DEVELOPER_COMMITTEES_CODE) {
+      throw new BadRequestException('Choose one of the six developer committees.');
+    }
+    return this.prisma.$transaction(async (transaction) => {
+      if (targetMemberId === user.memberId) throw new ConflictException('You cannot remove your own committee membership.');
+      const membership = await transaction.memberCommittee.findUnique({
+        where: { memberId_committeeId: { memberId: targetMemberId, committeeId: committee.committeeId } },
+        include: { member: { include: { person: true } } },
+      });
+      if (!membership || !['Leader', 'Co-Leader'].includes(membership.role) || !membership.member.isActive || !membership.member.person.isActive) {
+        throw new NotFoundException('No active committee leader was found in this developer committee.');
+      }
+      await this.deleteCommitteeMembershipData(transaction, targetMemberId, committee.committeeId, membership.id);
+      return {
+        memberId: String(targetMemberId),
+        name: membership.member.person.fullName,
+        committee: { code: committee.committeeCode, name: committee.committeeName, role: membership.role },
+        committeeMembershipRemoved: true,
+      };
+    });
+  }
+
+  private async deleteCommitteeMembershipData(
+    transaction: Prisma.TransactionClient,
+    memberId: number,
+    committeeId: number,
+    membershipId: number,
+  ) {
+    await transaction.committeePointEntry.deleteMany({ where: { memberId, committeeId } });
+    await transaction.committeeTask.deleteMany({
+      where: { committeeId, OR: [{ assignedMemberId: memberId }, { createdByMemberId: memberId }] },
+    });
+    await transaction.walletBarcodeAlias.deleteMany({ where: { link: { memberId, committeeId } } });
+    await transaction.walletMembershipLink.deleteMany({ where: { memberId, committeeId } });
+    await transaction.memberCommittee.delete({ where: { id: membershipId } });
+  }
+
   async createEvent(user: RequestUser | undefined, committeeCode: string, dto: CreateCommitteeEventDto) {
     const { committee, memberId } = await this.requireMembership(user, committeeCode);
     await this.requirePermission(memberId, EVENTS_PERMISSION, committee.committeeId);
@@ -1012,13 +1083,7 @@ export class CommitteeDashboardService {
         });
         if (!membership) throw new NotFoundException('This person is not an active member of the selected committee.');
 
-        // Point entries are scoped to this membership and the database uses
-        // RESTRICT to protect that history. A committee-level removal is an
-        // explicit request to remove this membership and its points together.
-        await transaction.committeePointEntry.deleteMany({
-          where: { memberId: member.memberId, committeeId: committee.committeeId },
-        });
-        await transaction.memberCommittee.delete({ where: { id: membership.id } });
+        await this.deleteCommitteeMembershipData(transaction, member.memberId, committee.committeeId, membership.id);
         return {
           memberId: String(member.memberId),
           name: person.fullName,
